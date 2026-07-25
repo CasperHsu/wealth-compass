@@ -1379,14 +1379,16 @@ function cardHTML(c,id){
   const cfg=S.cfg;
   if(c.kind==='inv'){
     const unit=c.unit, cf=c.cf;
-    /* 增值欄：剛抽卡時一律蓋牌「？」代表未知，開牌才揭曉；長期持有型（不開牌）顯示「—」 */
-    let growBox;
-    if(c.nosettle) growBox=`<div class="v num">—</div><div class="s">長期持有・不開牌</div>`;
-    else           growBox=`<div class="v mystery">？</div><div class="s">開牌才揭曉・未知</div>`;
-    const cfBox = c.addCf
-      ? `<div class="v mystery">？</div><div class="s">開牌前不配息</div>`
-      : (cf>0 ? `<div class="v num">+${fm(cf)}<span style="font-size:15px">/月/單位</span></div><div class="s">次月起每月加領${c.mystery?'':'（被動）'}</div>`
-              : `<div class="v num">0</div><div class="s">無配息</div>`);
+    const gamble = c.mystery==='gamble';
+    /* 第 2 格：賭博卡＝預期效益「本金翻倍或歸零」；長期持有＝「—」；其餘蓋牌「？」開牌才揭曉 */
+    let box2;
+    if(gamble)          box2=`<div class="invbox"><div class="lb">預期效益</div><div class="v mystery" style="font-size:26px">本金翻倍或歸零</div><div class="s">開牌才揭曉</div></div>`;
+    else if(c.nosettle) box2=`<div class="invbox"><div class="lb">資產增值</div><div class="v num">—</div><div class="s">長期持有・不開牌</div></div>`;
+    else                box2=`<div class="invbox"><div class="lb">資產增值</div><div class="v mystery">？</div><div class="s">開牌才揭曉・未知</div></div>`;
+    /* 第 3 格：現金流——只有實際會配息（cf>0）才出現，cf=0 的直接不顯示 */
+    const box3 = cf>0
+      ? `<div class="invbox"><div class="lb">現金流</div><div class="v num">+${fm(cf)}<span style="font-size:15px">/月/單位</span></div><div class="s">次月起每月加領（被動）</div></div>`
+      : '';
     const maxU = d().on ? Math.floor(d().acc.invest/unit) : 0;
     const demoCtl = d().on ? `<div class="demoinvest" id="demoInvBtns">
         <button onclick="uiDemoInvest(0)">示範學員：不投</button>
@@ -1401,8 +1403,8 @@ function cardHTML(c,id){
     return cardShell(c, `
       <div class="invgrid">
         <div class="invbox"><div class="lb">每單位本金</div><div class="v num">${fm(unit)}</div><div class="s">可投多單位・僅限投資帳戶資金</div></div>
-        <div class="invbox"><div class="lb">資產增值</div>${growBox}</div>
-        <div class="invbox"><div class="lb">現金流</div>${cfBox}</div>
+        ${box2}
+        ${box3}
       </div>
       <div class="invsteps one">
         <div><b>要投就趁現在</b>只能用<span class="em">「投資帳戶」</span>裡的籌碼，每單位 <span class="em">${fm(unit)}</span>、可投多單位，交給銀行。投資帳戶錢不夠＝資格不足。</div>
@@ -1533,8 +1535,6 @@ function charityHTML(){
     </div><div style="text-align:center;font-size:14px;margin-top:8px" id="charityDemo"></div>`:'';
   return cardShell(c, `<div class="moneybig">
     <div class="amt plus" style="font-size:44px">💝 自由捐贈</div>
-    <div class="note">從<b>貢獻帳戶</b>支出，每 ${fm(cfg.charityUnit)} 元為單位。<br>
-    善意不會立刻回報——但你種下的每一分，都在某個看不見的地方生根。</div>
   </div>${demoCtl}`, QUOTES.charity);
 }
 function accidentHTML(){
