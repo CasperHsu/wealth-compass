@@ -394,6 +394,12 @@ body.side-open #sideToggle{right:290px}
   padding:10px 18px;font-size:14px;color:var(--ink-soft);text-align:center;margin-top:12px;line-height:1.7;
 }
 .coopbox b{color:var(--gold-deep)}
+.hintbox{
+  border:2px solid var(--gold);background:#FBF5E4;border-radius:12px;
+  padding:14px 24px;font-size:16px;color:var(--ink);text-align:center;margin:16px auto 0;line-height:1.75;
+  max-width:640px;
+}
+.hintbox b{color:var(--gold-deep);font-size:17px}
 .coopin{display:inline-flex;gap:8px;align-items:center}
 .coopin input{
   width:122px;font:inherit;font-size:15px;padding:9px 10px;border:1.5px solid var(--gold);
@@ -1391,12 +1397,14 @@ function cardHTML(c,id){
   if(c.kind==='inv'){
     const unit=c.unit, cf=c.cf;
     const gamble = c.mystery==='gamble';
-    /* 第 2 格：賭博卡＝預期效益「本金翻倍或歸零」；長期持有＝「—」；其餘蓋牌「？」開牌才揭曉 */
-    let box2;
-    if(gamble)          box2=`<div class="invbox"><div class="lb">預期效益</div><div class="v mystery" style="font-size:26px">本金翻倍或歸零</div><div class="s">開牌才揭曉</div></div>`;
-    else if(c.nosettle) box2=`<div class="invbox"><div class="lb">資產增值</div><div class="v num">—</div><div class="s">長期持有・不開牌</div></div>`;
-    else                box2=`<div class="invbox"><div class="lb">資產增值</div><div class="v mystery">？</div><div class="s">開牌才揭曉・未知</div></div>`;
-    /* 第 3 格：現金流——只有實際會配息（cf>0）才出現，cf=0 的直接不顯示 */
+    /* 玩家選擇投入時只看得到「本金」和「現金流」，資產倍增/收益一律不揭露、等結果發生才知道：
+       有現金流（cf>0）＝只顯示本金＋現金流兩格；沒現金流的卡，第二格改顯示風險屬性（不寫倍數、不寫「開牌」字樣） */
+    let box2='';
+    if(cf<=0){
+      box2 = gamble
+        ? `<div class="invbox"><div class="lb">預期效益</div><div class="v mystery" style="font-size:26px">本金翻倍或歸零</div></div>`
+        : `<div class="invbox"><div class="lb">預期收益</div><div class="v mystery">未知</div></div>`;
+    }
     const box3 = cf>0
       ? `<div class="invbox"><div class="lb">現金流</div><div class="v num">+${fm(cf)}<span style="font-size:15px">/月/單位</span></div><div class="s">次月起每月加領（被動）</div></div>`
       : '';
@@ -1428,15 +1436,15 @@ function cardHTML(c,id){
     const cost=-c.amt, cfg2=S.cfg;
     return cardShell(c, `<div class="moneybig">
       <div class="amt minus num">−${fm(cost)}</div>
-      <div class="note">跑車／精品／名錶——慾望的帳單。<b>娛樂帳戶每支出 ${fm(cfg2.funPer)} 可抵銷 ${fm(cfg2.funCover)}</b>；
-      抵不完的差額，從生活帳戶（或依序動用其他帳戶）支付。</div>
-    </div>`, QUOTES.luxury);
+      <div class="note">跑車／精品／名錶——慾望的帳單。</div>
+    </div>
+    <div class="hintbox">💡 <b>娛樂帳戶每支出 ${fm(cfg2.funPer)} 可抵銷 ${fm(cfg2.funCover)}</b>；抵不完的差額，從生活帳戶（或依序動用其他帳戶）支付。</div>`, QUOTES.luxury);
   }
   if(c.kind==='good'||c.kind==='expense'){
     const plus=c.amt>0;
     return cardShell(c, `<div class="moneybig">
       <div class="amt num ${plus?'plus':'minus'}">${plus?'+':'−'}${fm(Math.abs(c.amt))}</div>
-      <div class="note">${plus?'進帳自由分配——依你的預算比例分流到各帳戶':'從生活帳戶支付，不夠就得動用其他帳戶'}</div>
+      <div class="note">${plus?'自行分配進帳戶':'從生活帳戶支付，不夠就得動用其他帳戶'}</div>
     </div>`, plus?QUOTES.good:QUOTES.expense);
   }
   return cardShell(c, `<div class="moneybig"><div class="amt calm">☁ 無事發生</div>
