@@ -378,6 +378,9 @@ body.side-open #sideToggle{right:290px}
 }
 .invsteps b{color:var(--green-900);font-size:14.5px;display:block;margin-bottom:1px}
 .invsteps .em{color:var(--gold-deep);font-weight:700}
+.invsteps.one{max-width:660px;margin:4px auto 0}
+.invsteps.one>div{flex:none;width:100%;max-width:none;text-align:center}
+.invsteps.one b{display:inline;margin-right:6px}
 .demoinvest{display:flex;gap:10px;justify-content:center;margin-top:15px;flex-wrap:wrap}
 .demoinvest button{
   font-size:15px;font-weight:700;padding:11px 22px;border-radius:999px;min-height:48px;
@@ -786,8 +789,8 @@ const CAT = {
     flavor:'市中心一層老公寓釋出長租約。簡單整理、分租出去，當起合法二房東，每月穩穩收租金價差。'},
   house3:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'三房兩廳的不動產',unit:30000,cf:3000,gm:2,keep:true,
     flavor:'蛋白區一間格局方正的三房兩廳，屋主急售。租金投報率漂亮，增值想像空間更大。'},
-  crash2:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災再現・飆股誘惑',unit:5000,cf:0,gm:0,dead:true,mystery:'gamble',
-    flavor:'市場又崩了一次，這回群組瘋傳一支「絕對會反彈」的明牌。上一次進場的人賺翻了——這次呢？'},
+  crash2:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災再現・危機入市',unit:5000,cf:0,gm:0,dead:true,mystery:'gamble',
+    flavor:'市場又崩了一次，恐慌蔓延，也有人開始默默進場。歷史不會重演，但總是驚人地相似。'},
   startup:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'朋友邀你一起創業',unit:20000,cf:0,gm:3,keep:true,extraCf:5000,mystery:'unknown',
     flavor:'最信任的夥伴帶著商業計畫書來找你：「這個市場正要起飛，就缺你這一份資金。」預期收益——未知。'},
   /* ── 後期 9–12 月 ── */
@@ -1383,7 +1386,7 @@ function cardHTML(c,id){
     const cfBox = c.addCf
       ? `<div class="v mystery">？</div><div class="s">開牌前不配息</div>`
       : (cf>0 ? `<div class="v num">+${fm(cf)}<span style="font-size:15px">/月/單位</span></div><div class="s">次月起每月加領${c.mystery?'':'（被動）'}</div>`
-              : `<div class="v num">0</div><div class="s">無配息・賭增值</div>`);
+              : `<div class="v num">0</div><div class="s">無配息</div>`);
     const maxU = d().on ? Math.floor(d().acc.invest/unit) : 0;
     const demoCtl = d().on ? `<div class="demoinvest" id="demoInvBtns">
         <button onclick="uiDemoInvest(0)">示範學員：不投</button>
@@ -1401,13 +1404,8 @@ function cardHTML(c,id){
         <div class="invbox"><div class="lb">資產增值</div>${growBox}</div>
         <div class="invbox"><div class="lb">現金流</div>${cfBox}</div>
       </div>
-      <div class="invsteps">
-        <div><b>❶ 本月・要投就趁現在</b>只能用<span class="em">「投資帳戶」</span>裡的籌碼，每單位 <span class="em">${fm(unit)}</span>、可投多單位，交給銀行。投資帳戶錢不夠＝資格不足。</div>
-        ${c.nosettle
-          ? `<div><b>❷ 長期持有</b>本金留在資產裡（計入淨資產），<span class="em">次月起每月收現金流</span>，不再開牌。</div>
-             <div><b>❸ 現金流</b>每單位每月 <span class="em">+${fm(cf)}</span>，直接墊高你的月現金流指標。</div>`
-          : `<div><b>❷ 等待發酵</b>投資有不確定性、也不會馬上賺——錢押 <span class="em">${cfg.settleAfter} 個月</span>，這段期間拿不回來。要不要投、投幾單位，現在就決定。</div>
-             <div><b>❸ 第 ${Math.min(S.round+cfg.settleAfter,cfg.rounds)} 月月初・開牌</b>結果<span class="em">當場揭曉</span>，依卡片條件結算收益${c.mystery?'——賭注是本金':''}。</div>`}
+      <div class="invsteps one">
+        <div><b>要投就趁現在</b>只能用<span class="em">「投資帳戶」</span>裡的籌碼，每單位 <span class="em">${fm(unit)}</span>、可投多單位，交給銀行。投資帳戶錢不夠＝資格不足。</div>
       </div>
       ${coopBox}
       ${demoCtl}
