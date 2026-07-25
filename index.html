@@ -1272,7 +1272,18 @@ function mainAction(){
   if(ph==='salary'){ pushUndo(); demoAllocate(); S.phase='event'; play('coin'); }   /* 發薪後直接進翻牌，分配自動記入 */
   else if(ph==='allocate'){ pushUndo(); S.phase='event'; }
   else if(ph==='event'){ drawEvent(); return; }
-  else if(ph==='drawn'){ pushUndo(); demoExpense(); S.phase='expense'; play('expense'); }
+  else if(ph==='drawn'){
+    pushUndo();
+    if(S.round===S.cfg.joblessMonth){
+      /* 第 6 月：失業通知在「繳固定支出」之前開牌；關掉通知後才進固定支出 */
+      queueOverlay(()=>{ play('boom'); openOverlay(joblessHTML(), true); });
+      onAllClosed = ()=>{ demoExpense(); S.phase='expense'; play('expense'); save(); renderAll(); };
+      save(); renderAll();
+      if(!overlayOpen) nextOverlay();
+      return;
+    }
+    demoExpense(); S.phase='expense'; play('expense');
+  }
   else if(ph==='expense'){ nextRound(); return; }
   save(); renderAll();
 }
@@ -1314,7 +1325,7 @@ function nextRound(){
     if(d().on) dLog(`結婚生子：固定支出從此每月 +${fm(cfg.marryExtra)}（現在 ${fm(curExpense())}/月）`,'warn');
     queueOverlay(()=>{ play('good'); openOverlay(marryHTML(), true); }); }
   if(r===cfg.knowMonth){ demoKnowledge(); queueOverlay(()=>{ play('fanfare'); openOverlay(knowledgeHTML(r), true); }); }
-  if(r===cfg.joblessMonth){ queueOverlay(()=>{ play('boom'); openOverlay(joblessHTML(), true); }); }
+  /* 失業通知已移到第 6 月「繳固定支出」之前（見 mainAction drawn 分支），此處不再重複 */
   if(r===cfg.charityMonth){ queueOverlay(()=>{ play('good'); openOverlay(charityHTML()); }); }
   if(r===cfg.accidentMonth){ demoAccident(); queueOverlay(()=>{ play('boom'); openOverlay(accidentHTML(), true); }); }
   demoMonthEnd(); demoSnap();
