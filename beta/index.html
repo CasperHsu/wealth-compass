@@ -1021,6 +1021,10 @@ function buildSyncState(){
     income:c.income, expense:curExpense(), coop:!!S.coop,
     loan:{ unit:c.loanUnit, ratePct:Math.round(c.loanRate*100), capX:c.loanCapX },
     fun:{ per:c.funPer, cover:c.funCover },
+    /* 志工端算錢會用到的參數：講師若在 ⚙ 設定裡臨場改了數字，副控台會跟著變 */
+    nums:{ stressCost:c.stressCost, marryExtra:c.marryExtra, knowUnit:1000,
+           joblessSaveCost:c.joblessSaveCost, charityUnit:c.charityUnit,
+           charityCover:c.charityCover, accidentCost:c.accidentCost, unlockFee:c.unlockFee },
     todo:syncTodo(), fixed:syncFixed(),
     card:(S.phase==='drawn'||S.phase==='expense') ? syncFace(S.recap[S.round]) : null,
     settle:syncSettle() };
