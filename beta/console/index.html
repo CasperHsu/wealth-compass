@@ -205,7 +205,7 @@ body.ready.disconnected #app{padding-top:118px}
 
   <div class="step">
     <h3>① 房號</h3>
-    <p>講師會在台上報房號，通常就是預設的 VISION。</p>
+    <p>講師會在台上報房號，通常就是預設的 VISION。平板要能上網才連得到講師。</p>
     <input class="roomin" id="inRoom" value="VISION" maxlength="8" autocomplete="off" spellcheck="false">
   </div>
 
@@ -296,31 +296,127 @@ function loadCS(){
 function nameOf(i){ return (CS.names[i]||'').trim() || ('學員 '+LET[i]); }
 
 /* =====================================================================
-   2. 連線（階段2＝BroadcastChannel，同一台電腦另開分頁就能同步；
-      階段3 換成 Supabase Realtime 時只要改這一段）
+   2. 連線：兩條腿同時走，任一條掛掉另一條照常
+      ① BroadcastChannel＝跟講師同一台電腦、另開分頁時用。免網路。
+      ② Supabase Realtime＝志工用自己的平板時用。走原生 WebSocket 講 Phoenix 協定，
+         不載入 supabase-js，維持單檔零依賴。
+      兩條線路會收到同一封包，靠 sid／seq 過濾，處理一次就好。
 ===================================================================== */
 let TX=null, ST=null, lastRx=0, hbT=null;
 const STALE_MS=20000;   /* 超過 20 秒沒收到主控的訊息＝視為斷線 */
 
-function makeTransport(room, onMsg){
-  if(typeof BroadcastChannel==='undefined') return null;
-  let ch; try{ ch=new BroadcastChannel('wc:'+room); }catch(e){ return null; }
-  ch.onmessage=e=>{ try{ onMsg(e.data); }catch(err){} };
-  return { send:o=>{ try{ ch.postMessage(o); }catch(err){} },
-           close:()=>{ try{ ch.close(); }catch(err){} } };
+/* 這把 anon key 只能進出廣播頻道；專案裡沒有任何資料表 */
+const RT_HOST='xfxibwzmpysvyakuhdge.supabase.co';
+const RT_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGlid3ptcHlzdnlha3VoZGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDM0MDMsImV4cCI6MjEwMDU3OTQwM30.u0kA2XuBoQSgW7Mcf9BPlxLtLKYxwU3LUYAy6-I3Bxg';
+
+function makeRealtimeLeg(room, onMsg, onUp){
+  if(typeof WebSocket==='undefined') return null;
+  const topic='realtime:wc:'+room;
+  const url='wss://'+RT_HOST+'/realtime/v1/websocket?apikey='+RT_KEY+'&vsn=1.0.0';
+  let ws=null, joined=false, ref=0, hb=null, miss=0, wait=null, tries=0, dead=false;
+  /* 一定要先看 readyState：socket 正在關閉時 ws.send() 在 Chrome 不會丟例外，
+     而是直接往 console 印紅字，try/catch 攔不到，真正的錯誤會被這種雜訊埋掉 */
+  const raw=o=>{ if(!ws || ws.readyState!==1) return;
+                 try{ ws.send(JSON.stringify(o)); }catch(e){} };
+
+  function open(){
+    if(dead) return;
+    try{ ws=new WebSocket(url); }catch(e){ ws=null; later(); return; }
+    ws.onopen=()=>{
+      joined=false; miss=0;
+      raw({ topic, event:'phx_join', ref:String(++ref), join_ref:'1',
+            payload:{ config:{ broadcast:{self:false,ack:false}, presence:{key:''}, private:false },
+                      access_token:RT_KEY } });
+      clearInterval(hb);
+      hb=setInterval(()=>{
+        if(!ws || ws.readyState!==1) return;
+        if(miss>=2){ fail(); return; }   /* 連兩次心跳沒回應＝線其實已經斷了，重連 */
+        miss++; raw({ topic:'phoenix', event:'heartbeat', payload:{}, ref:String(++ref) });
+      },20000);
+    };
+    ws.onmessage=e=>{
+      let m; try{ m=JSON.parse(e.data); }catch(err){ return; }
+      if(m.event==='phx_reply'){
+        miss=0;
+        if(m.topic===topic && m.payload && m.payload.status==='ok' && !joined){
+          joined=true; tries=0; try{ onUp&&onUp(); }catch(err){}
+        }
+        return;
+      }
+      if(m.event==='broadcast'){
+        if(m.payload && m.payload.payload){ try{ onMsg(m.payload.payload); }catch(err){} }
+        return;
+      }
+      if(m.event==='phx_error' || m.event==='phx_close') fail();
+    };
+    ws.onerror=()=>{};
+    ws.onclose=()=>fail();
+  }
+  function fail(){
+    joined=false; clearInterval(hb); hb=null;
+    if(ws){ try{ ws.onclose=null; ws.onmessage=null; ws.close(); }catch(e){} ws=null; }
+    later();
+  }
+  function later(){   /* 退避重連：0.7→1.4→2.8→5.6→8 秒，加亂數避免五台平板同時湧上 */
+    if(dead || wait) return;
+    wait=setTimeout(()=>{ wait=null; open(); },
+      Math.min(8000, 700*Math.pow(2, Math.min(tries++,4))) + Math.random()*300);
+  }
+  open();
+  return { kind:'rt', up:()=>joined,
+    send:o=>{ if(joined) raw({ topic, event:'broadcast', ref:String(++ref),
+                               payload:{ type:'broadcast', event:'msg', payload:o } }); },
+    /* 平板睡醒、WiFi 剛回來時立刻重連，不用等退避倒數 */
+    poke:()=>{ if(dead||joined) return;
+               if(ws && ws.readyState===0) return;     /* 正在連，別打斷它 */
+               clearTimeout(wait); wait=null; tries=0; clearInterval(hb); hb=null;
+               if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; }
+               open(); },
+    close:()=>{ dead=true; clearInterval(hb); clearTimeout(wait);
+                if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; } } };
+}
+
+function makeTransport(room, onMsg, onUp){
+  const legs=[];
+  if(typeof BroadcastChannel!=='undefined'){
+    try{
+      const ch=new BroadcastChannel('wc:'+room);
+      ch.onmessage=e=>{ try{ onMsg(e.data); }catch(err){} };
+      legs.push({ kind:'bc', up:()=>true, poke:()=>{},
+                  send:o=>{ try{ ch.postMessage(o); }catch(err){} },
+                  close:()=>{ try{ ch.close(); }catch(err){} } });
+    }catch(e){}
+  }
+  const rt=makeRealtimeLeg(room, onMsg, onUp);
+  if(rt) legs.push(rt);
+  if(!legs.length) return null;
+  const poke=()=>legs.forEach(l=>{ try{ l.poke(); }catch(e){} });
+  const onWake=()=>{ if(!document.hidden) poke(); };
+  addEventListener('online', poke);
+  document.addEventListener('visibilitychange', onWake);
+  return {
+    send:o=>legs.forEach(l=>{ try{ l.send(o); }catch(e){} }),
+    net:()=>legs.some(l=>l.kind==='rt' && l.up()),   /* 跨裝置那條通了沒 */
+    poke,
+    close:()=>{ removeEventListener('online', poke);
+                document.removeEventListener('visibilitychange', onWake);
+                legs.forEach(l=>{ try{ l.close(); }catch(e){} }); } };
 }
 function connect(){
   if(TX){ TX.close(); TX=null; }
-  TX=makeTransport(CS.room, onMsg);
+  TX=makeTransport(CS.room, onMsg, ()=>{ hello(); });   /* 網路一接通就報到，立刻要一份完整狀態 */
   if(!TX){ toast('這個瀏覽器不支援自動連線，已切到手動模式'); goManual(); return; }
-  TX.send({t:'hello', table:CS.table});
+  hello();
   clearInterval(hbT);
   hbT=setInterval(()=>{ report(); checkLink(); }, 4000);
   checkLink();
 }
+function hello(){ if(TX) TX.send({t:'hello', table:CS.table}); }
 function onMsg(m){
   if(!m || m.t!=='state') return;
-  if(ST && m.seq && ST.seq && m.seq < ST.seq) return;   /* 舊封包丟掉 */
+  /* 兩條線路會各送一份同樣的封包，處理一次就好；
+     講師重整頁面後 seq 會歸零，所以要連 sid 一起看，否則新封包會被誤判成舊的。 */
+  if(ST && m.sid===ST.sid && m.seq && ST.seq && m.seq <= ST.seq) return;
   ST=m; lastRx=Date.now();
   CS.manual=false;
   checkLink();      /* 一收到訊息就把紅色橫幅收掉，不用等 4 秒心跳 */
@@ -976,7 +1072,9 @@ function setPanel(){
     '<div style="background:var(--brick-50);border:1.5px solid var(--brick);border-radius:10px;padding:12px;font-size:14px;line-height:1.6;margin-bottom:14px">還沒收到主控台的訊息。請講師在主控台連點左上角 Logo 三下，按「開啟連線」。</div>';
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>設定</h3>
-    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">房號 ${CS.room}・第 ${CS.table} 桌・${CS.n} 位學員</div>
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">房號 ${CS.room}・第 ${CS.table} 桌・${CS.n} 位學員<br>
+      連線方式：${(TX&&TX.net&&TX.net())?'網路（跨裝置）'
+        :(ST?'同一台電腦的另一個分頁':'尚未連上')}</div>
     ${link}
     <button class="dbtn" onclick="openDrawer('manual')">切換月份／手動模式</button>
     <button class="dbtn" onclick="closeDrawer();setTimeout(()=>{$('#setup').style.display='block';fillSetup();},80)">改桌號或學員姓名</button>
@@ -1079,7 +1177,7 @@ function startConsole(){
   }
   /* 分頁被切走再切回來（志工看別的東西又回來）→ 立刻跟主控要一份最新狀態 */
   document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden && TX){ TX.send({t:'hello', table:CS.table}); checkLink(); }
+    if(!document.hidden && TX){ hello(); checkLink(); }
   });
 })();
 </script>

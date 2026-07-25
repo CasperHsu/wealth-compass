@@ -939,20 +939,122 @@ function undo(){
    ── 主控是唯一真相來源：只廣播「這個月要幹嘛」，副控負責顯示與記帳。
    ── 預設單機模式：SYNC.on=false 時 syncPush() 直接 return，
       整份遊戲的行為與正式版一模一樣，連線功能形同不存在。
-   ── 階段1 傳輸層＝BroadcastChannel（同一台電腦跨分頁，免網路、免帳號）；
-      階段3 改接 Supabase Realtime 時，只要換掉 makeTransport()，其餘程式不動。
+   ── 傳輸層走「兩條腿」，同時送、同時收，任一條掛掉另一條照常：
+      ① BroadcastChannel＝同一台電腦跨分頁。免網路、零延遲，教室斷網它還活著。
+      ② Supabase Realtime＝跨裝置，志工用自己的平板連。
+      重複收到的同一封包由 sid／seq 過濾掉，收兩次不會出事。
 ===================================================================== */
-const SYNC = { on:false, room:'VISION', tables:{}, tx:null, seq:0, hb:null };
+const SYNC = { on:false, tables:{}, tx:null, seq:0, hb:null, hello:{},
+  /* sid＝這一次開啟主控的識別碼。講師重整頁面後 seq 會歸零，
+     沒有 sid 的話副控會把新封包誤判成舊的而全部丟掉。 */
+  sid: Math.random().toString(36).slice(2,10),
+  room:(function(){ try{ return localStorage.getItem('zfl-room')||'VISION'; }catch(e){ return 'VISION'; } })() };
 const SYNC_TABLES = 5;         /* 一場最多 5 桌 */
 const SYNC_STALE_MS = 25000;   /* 超過 25 秒沒回報＝視為斷線 */
 
-function makeTransport(room, onMsg){
-  if(typeof BroadcastChannel==='undefined') return null;
-  let ch;
-  try{ ch = new BroadcastChannel('wc:'+room); }catch(e){ return null; }
-  ch.onmessage = e=>{ try{ onMsg(e.data); }catch(err){} };
-  return { send:o=>{ try{ ch.postMessage(o); }catch(err){} },
-           close:()=>{ try{ ch.close(); }catch(err){} } };
+/* Supabase Realtime 廣播頻道。刻意不載入 supabase-js（約 120KB）：
+   這裡只用到 Phoenix 協定的 join／broadcast／heartbeat 三個動作，直接講原生 WebSocket，
+   單檔零依賴的特性才保得住，離線時也不會卡在載入外部程式庫。
+   這把 anon key 只能進出廣播頻道——專案裡沒有任何資料表，也沒開放註冊。 */
+const RT_HOST='xfxibwzmpysvyakuhdge.supabase.co';
+const RT_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGlid3ptcHlzdnlha3VoZGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDM0MDMsImV4cCI6MjEwMDU3OTQwM30.u0kA2XuBoQSgW7Mcf9BPlxLtLKYxwU3LUYAy6-I3Bxg';
+
+function makeRealtimeLeg(room, onMsg, onUp){
+  if(typeof WebSocket==='undefined') return null;
+  const topic='realtime:wc:'+room;
+  const url='wss://'+RT_HOST+'/realtime/v1/websocket?apikey='+RT_KEY+'&vsn=1.0.0';
+  let ws=null, joined=false, ref=0, hb=null, miss=0, wait=null, tries=0, dead=false;
+  /* 一定要先看 readyState：socket 正在關閉時 ws.send() 在 Chrome 不會丟例外，
+     而是直接往 console 印紅字，try/catch 攔不到，真正的錯誤會被這種雜訊埋掉 */
+  const raw=o=>{ if(!ws || ws.readyState!==1) return;
+                 try{ ws.send(JSON.stringify(o)); }catch(e){} };
+
+  function open(){
+    if(dead) return;
+    try{ ws=new WebSocket(url); }catch(e){ ws=null; later(); return; }
+    ws.onopen=()=>{
+      joined=false; miss=0;
+      raw({ topic, event:'phx_join', ref:String(++ref), join_ref:'1',
+            payload:{ config:{ broadcast:{self:false,ack:false}, presence:{key:''}, private:false },
+                      access_token:RT_KEY } });
+      clearInterval(hb);
+      hb=setInterval(()=>{
+        if(!ws || ws.readyState!==1) return;
+        if(miss>=2){ fail(); return; }   /* 連兩次心跳沒回應＝線其實已經斷了，重連 */
+        miss++; raw({ topic:'phoenix', event:'heartbeat', payload:{}, ref:String(++ref) });
+      },20000);
+    };
+    ws.onmessage=e=>{
+      let m; try{ m=JSON.parse(e.data); }catch(err){ return; }
+      if(m.event==='phx_reply'){
+        miss=0;
+        if(m.topic===topic && m.payload && m.payload.status==='ok' && !joined){
+          joined=true; tries=0; try{ onUp&&onUp(); }catch(err){}
+        }
+        return;
+      }
+      if(m.event==='broadcast'){
+        if(m.payload && m.payload.payload){ try{ onMsg(m.payload.payload); }catch(err){} }
+        return;
+      }
+      if(m.event==='phx_error' || m.event==='phx_close') fail();
+    };
+    ws.onerror=()=>{};
+    ws.onclose=()=>fail();
+  }
+  function fail(){
+    joined=false; clearInterval(hb); hb=null;
+    if(ws){ try{ ws.onclose=null; ws.onmessage=null; ws.close(); }catch(e){} ws=null; }
+    later();
+  }
+  function later(){   /* 退避重連：0.7→1.4→2.8→5.6→8 秒，加一點亂數避免五台平板同時重連 */
+    if(dead || wait) return;
+    wait=setTimeout(()=>{ wait=null; open(); },
+      Math.min(8000, 700*Math.pow(2, Math.min(tries++,4))) + Math.random()*300);
+  }
+  open();
+  return { kind:'rt', up:()=>joined,
+    send:o=>{ if(joined) raw({ topic, event:'broadcast', ref:String(++ref),
+                               payload:{ type:'broadcast', event:'msg', payload:o } }); },
+    /* 平板睡醒、WiFi 剛回來時立刻重連，不用等退避倒數 */
+    poke:()=>{ if(dead||joined) return;
+               if(ws && ws.readyState===0) return;     /* 正在連，別打斷它 */
+               clearTimeout(wait); wait=null; tries=0; clearInterval(hb); hb=null;
+               if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; }
+               open(); },
+    close:()=>{ dead=true; clearInterval(hb); clearTimeout(wait);
+                if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; } } };
+}
+
+function makeTransport(room, onMsg, onUp){
+  const legs=[];
+  if(typeof BroadcastChannel!=='undefined'){
+    try{
+      const ch=new BroadcastChannel('wc:'+room);
+      ch.onmessage=e=>{ try{ onMsg(e.data); }catch(err){} };
+      legs.push({ kind:'bc', up:()=>true, poke:()=>{},
+                  send:o=>{ try{ ch.postMessage(o); }catch(err){} },
+                  close:()=>{ try{ ch.close(); }catch(err){} } });
+    }catch(e){}
+  }
+  const rt=makeRealtimeLeg(room, onMsg, onUp);
+  if(rt) legs.push(rt);
+  if(!legs.length) return null;
+  const poke=()=>legs.forEach(l=>{ try{ l.poke(); }catch(e){} });
+  const onWake=()=>{ if(!document.hidden) poke(); };
+  addEventListener('online', poke);
+  document.addEventListener('visibilitychange', onWake);
+  return {
+    send:o=>legs.forEach(l=>{ try{ l.send(o); }catch(e){} }),
+    net:()=>legs.some(l=>l.kind==='rt' && l.up()),   /* 跨裝置那條通了沒 */
+    poke,
+    close:()=>{ removeEventListener('online', poke);
+                document.removeEventListener('visibilitychange', onWake);
+                legs.forEach(l=>{ try{ l.close(); }catch(e){} }); } };
+}
+/* 組長平板要開的網址（跨裝置時要唸給志工聽，所以印出完整網址） */
+function consoleURL(){
+  return (location.origin+location.pathname).replace(/[^/]*$/,'')+'console/';
 }
 
 /* 只送「卡面看得到的」欄位；gm／dead 等底牌絕不外流 */
@@ -1015,7 +1117,7 @@ function syncTodo(){
 }
 function buildSyncState(){
   const c=S.cfg;
-  return { t:'state', seq:++SYNC.seq, room:SYNC.room, ts:Date.now(),
+  return { t:'state', seq:++SYNC.seq, sid:SYNC.sid, room:SYNC.room, ts:Date.now(),
     started:!!S.started, round:S.round, rounds:c.rounds, phase:S.phase,
     jobless: S.started ? isJobless(S.round) : false,
     income:c.income, expense:curExpense(), coop:!!S.coop,
@@ -1043,7 +1145,11 @@ function syncPush(force){
 }
 function syncOnMsg(m){
   if(!m || !SYNC.on) return;
-  if(m.t==='hello'){ syncPush(true); return; }        /* 副控剛加入 → 立刻補一份完整狀態 */
+  if(m.t==='hello'){                                   /* 副控剛加入 → 立刻補一份完整狀態 */
+    const k='t'+(m.table||0), now=Date.now();          /* 兩條線路會各送一次，1.5 秒內只回一份 */
+    if(SYNC.hello[k] && now-SYNC.hello[k]<1500) return;
+    SYNC.hello[k]=now; syncPush(true); return;
+  }
   if(m.t==='status'){
     SYNC.tables[m.table]={ table:m.table, name:m.name||`第 ${m.table} 桌`,
       students:m.students||0, done:!!m.done, round:m.round||0, ts:Date.now() };
@@ -1052,9 +1158,10 @@ function syncOnMsg(m){
 }
 function syncStart(){
   if(SYNC.on) return true;
-  const tx=makeTransport(SYNC.room, syncOnMsg);
+  /* 網路那條一接通就立刻補一份完整狀態，志工的平板不用等下一次心跳 */
+  const tx=makeTransport(SYNC.room, syncOnMsg, ()=>{ syncPush(true); renderSync(); });
   if(!tx){ toast('這個瀏覽器不支援連線功能'); return false; }
-  SYNC.tx=tx; SYNC.on=true; SYNC.tables={};
+  SYNC.tx=tx; SYNC.on=true; SYNC.tables={}; SYNC.hello={};
   document.body.classList.add('sync-on');
   SYNC.hb=setInterval(()=>{ syncPush(true); renderSync(); },5000);
   syncPush(true); renderSync();
@@ -1074,7 +1181,7 @@ function toggleSyncPanel(){ document.body.classList.toggle('syncpanel-open'); re
 function renderSync(){
   const box=$('#syncPanel'); if(!box) return;
   if(!SYNC.on){ box.innerHTML=''; return; }
-  const now=Date.now();
+  const now=Date.now(), net=!!(SYNC.tx&&SYNC.tx.net&&SYNC.tx.net());
   let done=0, live=0, rows='';
   for(let i=1;i<=SYNC_TABLES;i++){
     const t=SYNC.tables[i];
@@ -1087,10 +1194,13 @@ function renderSync(){
   }
   box.innerHTML=`<div class="syhead"><b>各 桌 進 度</b><button class="syx" onclick="toggleSyncPanel()">✕</button></div>
     <div class="sybig"><span class="num">${done}</span> ／ ${live} 桌完成</div>
-    <div class="synote">房號 <b>${SYNC.room}</b>・目前第 ${S.round||'—'} 月</div>
+    <div class="synote">房號 <b>${SYNC.room}</b>・目前第 ${S.round||'—'} 月<br>
+      跨裝置連線：${net
+        ? '<b style="color:var(--green)">正常</b>（志工可用自己的平板）'
+        : '<b style="color:var(--brick)">連線中…</b>（暫時只有同一台電腦的分頁會同步）'}</div>
     <div class="sylist">${rows}</div>
     <div class="syfoot">這裡只是提醒，<b>不會擋住流程</b>——你隨時可以繼續往下推。<br>
-      組長網址＝本頁網址後面加上 <b>console/</b></div>`;
+      組長網址：<b style="word-break:break-all">${consoleURL()}</b></div>`;
 }
 
 /* =====================================================================
@@ -2255,9 +2365,11 @@ function openHost(){
     <div class="hostsync">
       <b>副控台連線</b>
       <span>${SYNC.on
-        ? `已開啟・房號 <b>${SYNC.room}</b>（右側金色握把可看各桌進度）`
-        : '關閉中＝單機模式，行為與正式版完全相同'}</span>
+        ? `已開啟・房號 <b>${SYNC.room}</b>。請組長用平板開 <b>${consoleURL()}</b>，輸入同一個房號。<br>
+           右側金色握把可看各桌進度。`
+        : `關閉中＝單機模式，行為與正式版完全相同。<br>房號 <b>${SYNC.room}</b>`}</span>
       <button class="ctl" onclick="hostSync()">${SYNC.on?'離　線':'開啟連線'}</button>
+      <button class="ctl" onclick="hostRoom()">換房號</button>
     </div>
     <div class="formfoot">
       <button class="ctl" onclick="hostShuffle()">重洗剩餘牌序</button>
@@ -2269,6 +2381,19 @@ function openHost(){
 function hostSync(){
   if(SYNC.on) syncStop(); else syncStart();
   closeOverlay(); renderAll();
+}
+/* 換房號：平常不用動。只有「同一時段有另一班也在玩」時才需要換，
+   否則兩班會連進同一個頻道，各桌進度會互相亂跳。 */
+function hostRoom(){
+  const v=(prompt('房號（英文字母或數字，4–8 碼）。\n只有同時段有另一班也在上這堂課才需要改，平常維持 VISION 就好。', SYNC.room)||'').trim().toUpperCase();
+  if(!v || v===SYNC.room) return;
+  if(!/^[A-Z0-9]{4,8}$/.test(v)){ toast('房號只能用英文字母和數字，4 到 8 碼'); return; }
+  const was=SYNC.on;
+  if(was) syncStop();
+  SYNC.room=v; try{ localStorage.setItem('zfl-room',v); }catch(e){}
+  if(was) syncStart();
+  closeOverlay(); renderAll();
+  toast(`房號已改成 ${v}，請通知各桌組長重新輸入`);
 }
 function hostCoop(){
   pushUndo();

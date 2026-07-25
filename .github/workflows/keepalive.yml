@@ -1,0 +1,30 @@
+# 免費 Supabase 專案閒置 7 天會自動暫停，而這門課一個月才上一次，一定會踩到。
+# 暫停了會怎樣：志工「用自己平板」那條路連不上（同一台電腦跨分頁的退路仍然可用）。
+# 所以每天戳一下 wealth-compass 專案，讓它維持啟用。
+#
+# 這裡直接寫 anon key 不是疏忽：同一個 repo 的 index.html 本來就印著它，
+# 它只能進出廣播頻道，專案裡沒有任何資料表，也關掉了公開註冊。
+#
+# 注意：GitHub 對「60 天沒有新 commit」的 repo 會自動停掉排程。
+# 若很久沒更新遊戲，記得到 Actions 頁面按一下 Enable，或手動 Run workflow。
+name: keepalive
+
+on:
+  schedule:
+    - cron: '17 3 * * *'      # 每天 UTC 03:17（台灣時間 11:17）
+  workflow_dispatch:           # 也可以手動按一下，例如上課前一天
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 戳一下 Supabase，避免專案被自動暫停
+        run: |
+          KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGlid3ptcHlzdnlha3VoZGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDM0MDMsImV4cCI6MjEwMDU3OTQwM30.u0kA2XuBoQSgW7Mcf9BPlxLtLKYxwU3LUYAy6-I3Bxg'
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "apikey: $KEY" \
+            https://xfxibwzmpysvyakuhdge.supabase.co/auth/v1/settings)
+          echo "回應碼：$CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::warning::專案可能已被暫停或有異常，上課前請先到 Supabase 後台確認"
+          fi
