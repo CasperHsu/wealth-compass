@@ -110,6 +110,45 @@ body.side-open #side{display:block}
   transition:right .2s ease,opacity .2s ease}
 #sideToggle:hover{opacity:1}
 body.side-open #sideToggle{right:290px}
+/* ── 副控台連線面板：第二個握把＋覆蓋式抽屜 ──
+   刻意用 position:fixed 蓋在畫面上，不進 #main 的版面流，
+   所以舞台縮放（fitStage）與正式版完全一樣，開不開都不影響投影。 */
+#syncToggle{
+  position:fixed;right:0;top:calc(50% + 64px);z-index:35;display:none;
+  writing-mode:vertical-rl;text-orientation:upright;
+  background:var(--gold-deep);color:#FFF8E7;border:none;cursor:pointer;
+  padding:14px 7px;border-radius:12px 0 0 12px;font-size:14px;letter-spacing:.3em;
+  font-family:var(--serif);font-weight:900;box-shadow:var(--shadow);opacity:.8;
+  transition:right .2s ease,opacity .2s ease}
+#syncToggle:hover{opacity:1}
+body.sync-on #syncToggle{display:block}
+body.side-open #syncToggle{right:290px}
+#syncPanel{
+  position:fixed;top:0;right:0;bottom:0;width:320px;z-index:36;
+  background:var(--cream);border-left:2px solid var(--green-900);
+  box-shadow:-8px 0 28px rgba(46,74,56,.2);padding:18px 18px 14px;overflow-y:auto;
+  transform:translateX(102%);transition:transform .22s ease}
+body.syncpanel-open #syncPanel{transform:translateX(0)}
+#syncPanel .syhead{display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--serif);font-size:15px;letter-spacing:.22em;color:var(--green-900);font-weight:900}
+#syncPanel .syx{background:none;border:none;font-size:18px;color:var(--ink-mute);cursor:pointer;line-height:1}
+#syncPanel .sybig{margin:14px 0 2px;font-family:var(--serif);font-size:17px;color:var(--ink)}
+#syncPanel .sybig .num{font-size:40px;font-weight:900;color:var(--green);letter-spacing:.02em}
+#syncPanel .synote{font-size:12px;color:var(--ink-mute);margin-bottom:12px}
+#syncPanel .syrow{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:6px;
+  border-radius:9px;background:#fff;border:1px solid var(--line);font-size:13px}
+#syncPanel .syrow .n{font-weight:900;color:var(--green-900);flex:none;width:58px}
+#syncPanel .syrow .s{flex:1}
+#syncPanel .syrow .p{color:var(--ink-mute);font-size:12px}
+#syncPanel .syrow.ok{background:#EFF6EE;border-color:#BBD4BC}
+#syncPanel .syrow.ok .s{color:var(--green);font-weight:900}
+#syncPanel .syrow.off{background:var(--brick-soft);border-color:#E4BEB4}
+#syncPanel .syrow.off .s{color:var(--brick);font-weight:900}
+#syncPanel .syfoot{margin-top:14px;font-size:12px;line-height:1.7;color:var(--ink-mute);
+  border-top:1px dashed var(--line);padding-top:10px}
+.hostsync{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--green-faint);
+  border:1px solid var(--line);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hostsync b{color:var(--green-900)}
 #controls{
   flex:none;display:flex;align-items:center;gap:10px;
   padding:10px 22px;background:var(--cream-deep);border-top:1px solid var(--line);
@@ -688,6 +727,8 @@ body.side-open #sideToggle{right:290px}
   </div>
 </div>
 <button id="sideToggle" onclick="toggleSide()" title="本月流程與公告欄">本月資訊</button>
+<button id="syncToggle" onclick="toggleSyncPanel()" title="各桌進度（副控台連線中才會出現）">各桌進度</button>
+<aside id="syncPanel"></aside>
 <div id="drawer"></div>
 <div id="overlay" class="hidden"></div>
 <div id="toast"></div>
@@ -864,8 +905,9 @@ function buildDeck(cfg){
 }
 
 /* ---------- 存檔／復原 ---------- */
-const LSKEY='zfl-compass-v6b';
-function save(){ try{ localStorage.setItem(LSKEY, JSON.stringify(S)); }catch(e){} }
+const LSKEY='zfl-compass-v6b';   /* beta 開發線專用；正式版是 zfl-compass-v5，兩邊存檔互不覆蓋 */
+function save(){ try{ localStorage.setItem(LSKEY, JSON.stringify(S)); }catch(e){}
+  try{ syncPush(); }catch(e){} }   /* 單機模式下 syncPush 直接 return，等同沒這行 */
 function load(){
   try{
     const s=JSON.parse(localStorage.getItem(LSKEY));
@@ -890,6 +932,161 @@ function undo(){
   S = JSON.parse(UNDO.pop());
   S.timer=keepTimer;
   closeOverlay(true); save(); renderAll(); toast('已復原上一步');
+}
+
+/* =====================================================================
+   副控台連線（主控端）
+   ── 主控是唯一真相來源：只廣播「這個月要幹嘛」，副控負責顯示與記帳。
+   ── 預設單機模式：SYNC.on=false 時 syncPush() 直接 return，
+      整份遊戲的行為與正式版一模一樣，連線功能形同不存在。
+   ── 階段1 傳輸層＝BroadcastChannel（同一台電腦跨分頁，免網路、免帳號）；
+      階段3 改接 Supabase Realtime 時，只要換掉 makeTransport()，其餘程式不動。
+===================================================================== */
+const SYNC = { on:false, room:'VISION', tables:{}, tx:null, seq:0, hb:null };
+const SYNC_TABLES = 5;         /* 一場最多 5 桌 */
+const SYNC_STALE_MS = 25000;   /* 超過 25 秒沒回報＝視為斷線 */
+
+function makeTransport(room, onMsg){
+  if(typeof BroadcastChannel==='undefined') return null;
+  let ch;
+  try{ ch = new BroadcastChannel('wc:'+room); }catch(e){ return null; }
+  ch.onmessage = e=>{ try{ onMsg(e.data); }catch(err){} };
+  return { send:o=>{ try{ ch.postMessage(o); }catch(err){} },
+           close:()=>{ try{ ch.close(); }catch(err){} } };
+}
+
+/* 只送「卡面看得到的」欄位；gm／dead 等底牌絕不外流 */
+function syncFace(id){
+  const c=CAT[id]; if(!c) return null;
+  return { id, kind:c.kind, title:c.title, tag:c.tag,
+           unit:c.unit||0, cf:c.cf||0, amt:c.amt||0 };
+}
+/* 本月要開牌的投資：到了該開牌的月份，才把倍數換算成「每單位該發多少」送出去 */
+function syncSettle(){
+  if(!S.started || S.round<1 || S.round>S.cfg.rounds) return [];
+  return S.pend.filter(p=>p.due===S.round && !p.nosettle).map(p=>{
+    const c=CAT[p.id]; if(!c) return null;
+    return { id:p.id, title:c.title, unit:c.unit, dead:!!c.dead,
+             perUnit: c.dead ? 0 : (c.unit*c.gm + (c.back?c.unit:0)),
+             backPrincipal:!!c.back,
+             addCf:c.addCf||0, extraCf:c.extraCf||0,
+             keepCf:(c.cf>0 && !c.addCf) ? c.cf : 0 };
+  }).filter(Boolean);
+}
+/* 本月的固定事件（同一個月可能有兩件，例如第 4 月＝結婚生子＋重分配），用白話寫給志工看 */
+function syncFixed(){
+  const c=S.cfg, r=S.round, out=[];
+  if(!S.started || r<1 || r>c.rounds) return out;
+  if(r===c.mindlessMonth) out.push({id:'mindless',title:'無意識消費',
+    brief:'有 2 個以上帳戶的人免執行。少於 2 個帳戶＝月光族，從這個月起每到月底，把他手上現金與生活帳戶剩下的錢全部收回。'});
+  if(r===c.stressMonth) out.push({id:'stress',title:'壓力事件・報復性消費',
+    brief:`向每一位收 ${fm(c.stressCost)}。娛樂帳戶每存 ${fm(c.funPer)} 可以抵 ${fm(c.funCover)}；存滿 ${fm(c.funPer*3)} 就全額抵銷、不用付。`});
+  if(r===c.marryMonth) out.push({id:'marry',title:'結婚生子',
+    brief:`從下個月開始，每個月的固定支出永久增加 ${fm(c.marryExtra)}（變成 ${fm(c.expense+c.marryExtra)}）。這個月不用多收錢。`});
+  if(r===c.knowMonth) out.push({id:'know',title:'知識變現',
+    brief:'學習帳戶每 1,000 可以 1 比 1 換成「每月固定收入」。學員說要換多少，就從學習帳戶收走多少，之後每個月多發同樣的錢給他。'});
+  if(r===c.joblessMonth) out.push({id:'jobless',title:'失業／公司倒閉通知',
+    brief:`第 ${c.joblessMonth+1}、${c.joblessMonth+2} 月停發薪水（投資的被動收入照領）。儲蓄帳戶每付 ${fm(c.joblessSaveCost)} 可以免付當月的固定支出。`});
+  if(r===c.charityMonth) out.push({id:'charity',title:'公益勸募',
+    brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位，從貢獻帳戶出。務必記下每個人捐了多少，後面會用到。`});
+  if(r===c.accidentMonth) out.push({id:'accident',title:'重大事故',
+    brief:`向每一位收 ${fm(c.accidentCost)}。之前每捐過 ${fm(c.charityUnit)}，就有貴人相助保留 ${fm(c.charityCover)}；捐滿 ${fm(c.charityUnit*3)} 全額保住、不用付。`});
+  if(r===c.reallocA || r===c.reallocB) out.push({id:'realloc',title:'預算重分配窗口',
+    brief:`可以重新調整六個帳戶的分配比例與已經存進去的錢。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費`:'這次免費'}。`});
+  return out;
+}
+/* 「現在這一步要做什麼」——副控畫面正中央那句話 */
+function syncTodo(){
+  if(!S.started) return {act:'wait', text:'等講師開始遊戲'};
+  if(S.round>S.cfg.rounds) return {act:'final', text:'遊戲結束，準備結算'};
+  switch(S.phase){
+    case 'salary':
+      return isJobless(S.round)
+        ? {act:'salary', money:0, text:'本月停薪，不發薪水',
+           note:'投資的被動收入仍要照發，金額每人不同，請看各人的紀錄'}
+        : {act:'salary', money:S.cfg.income, text:`發給每一位 ${fm(S.cfg.income)}`, note:'本月薪水'};
+    case 'allocate': return {act:'wait', text:'等學員把收入分配到各帳戶'};
+    case 'event':    return {act:'draw', text:'等講師翻開本月事件卡'};
+    case 'drawn':    return {act:'card', text:'依事件卡的指示結算'};
+    case 'expense':  return {act:'expense', money:curExpense(),
+                             text:`向每一位收 ${fm(curExpense())}`, note:'本月固定生活支出'};
+  }
+  return {act:'wait', text:''};
+}
+function buildSyncState(){
+  const c=S.cfg;
+  return { t:'state', seq:++SYNC.seq, room:SYNC.room, ts:Date.now(),
+    started:!!S.started, round:S.round, rounds:c.rounds, phase:S.phase,
+    jobless: S.started ? isJobless(S.round) : false,
+    income:c.income, expense:curExpense(), coop:!!S.coop,
+    loan:{ unit:c.loanUnit, ratePct:Math.round(c.loanRate*100), capX:c.loanCapX },
+    fun:{ per:c.funPer, cover:c.funCover },
+    todo:syncTodo(), fixed:syncFixed(),
+    card:(S.phase==='drawn'||S.phase==='expense') ? syncFace(S.recap[S.round]) : null,
+    settle:syncSettle() };
+}
+/* 節流（不是防抖）：第一則立刻送，之後最多每 120ms 一則，並保證最後一則一定會送出。
+   用防抖的話，連續快速操作會讓推播一直被往後延，副控畫面可能整段停住。 */
+let syncT=null, syncLast=0;
+function syncPush(force){
+  if(!SYNC.on || !SYNC.tx) return;          /* 單機模式：什麼都不做 */
+  if(force){ clearTimeout(syncT); syncT=null; syncLast=Date.now(); SYNC.tx.send(buildSyncState()); return; }
+  const wait = Math.max(0, 120-(Date.now()-syncLast));
+  if(wait===0){ syncLast=Date.now(); SYNC.tx.send(buildSyncState()); return; }
+  if(syncT) return;                          /* 已經排隊了，等它送就好 */
+  syncT=setTimeout(()=>{ syncT=null;
+    if(SYNC.on&&SYNC.tx){ syncLast=Date.now(); SYNC.tx.send(buildSyncState()); } }, wait);
+}
+function syncOnMsg(m){
+  if(!m || !SYNC.on) return;
+  if(m.t==='hello'){ syncPush(true); return; }        /* 副控剛加入 → 立刻補一份完整狀態 */
+  if(m.t==='status'){
+    SYNC.tables[m.table]={ table:m.table, name:m.name||`第 ${m.table} 桌`,
+      students:m.students||0, done:!!m.done, round:m.round||0, ts:Date.now() };
+    renderSync();
+  }
+}
+function syncStart(){
+  if(SYNC.on) return true;
+  const tx=makeTransport(SYNC.room, syncOnMsg);
+  if(!tx){ toast('這個瀏覽器不支援連線功能'); return false; }
+  SYNC.tx=tx; SYNC.on=true; SYNC.tables={};
+  document.body.classList.add('sync-on');
+  SYNC.hb=setInterval(()=>{ syncPush(true); renderSync(); },5000);
+  syncPush(true); renderSync();
+  toast(`📡 副控台連線已開啟・房號 ${SYNC.room}`);
+  return true;
+}
+function syncStop(){
+  if(!SYNC.on) return;
+  clearInterval(SYNC.hb); SYNC.hb=null;
+  if(SYNC.tx) SYNC.tx.close();
+  SYNC.tx=null; SYNC.on=false; SYNC.tables={};
+  document.body.classList.remove('sync-on','syncpanel-open');
+  renderSync();
+  toast('已離線，回到單機模式（遊戲照常進行）');
+}
+function toggleSyncPanel(){ document.body.classList.toggle('syncpanel-open'); renderSync(); }
+function renderSync(){
+  const box=$('#syncPanel'); if(!box) return;
+  if(!SYNC.on){ box.innerHTML=''; return; }
+  const now=Date.now();
+  let done=0, live=0, rows='';
+  for(let i=1;i<=SYNC_TABLES;i++){
+    const t=SYNC.tables[i];
+    const off = !t || (now-t.ts)>SYNC_STALE_MS;
+    if(t && !off){ live++; if(t.done) done++; }
+    rows+=`<div class="syrow ${off?(t?'off':''):(t.done?'ok':'')}">
+      <span class="n">第 ${i} 桌</span>
+      <span class="s">${!t?'未連線':off?'⚠ 斷線':(t.done?'✓ 已完成':'進行中')}</span>
+      <span class="p">${t&&!off?`${t.students} 人`:'—'}</span></div>`;
+  }
+  box.innerHTML=`<div class="syhead"><b>各 桌 進 度</b><button class="syx" onclick="toggleSyncPanel()">✕</button></div>
+    <div class="sybig"><span class="num">${done}</span> ／ ${live} 桌完成</div>
+    <div class="synote">房號 <b>${SYNC.room}</b>・目前第 ${S.round||'—'} 月</div>
+    <div class="sylist">${rows}</div>
+    <div class="syfoot">這裡只是提醒，<b>不會擋住流程</b>——你隨時可以繼續往下推。<br>
+      組長網址＝本頁網址後面加上 <b>console/</b></div>`;
 }
 
 /* =====================================================================
@@ -2051,12 +2248,23 @@ function openHost(){
     <p class="lsub">學員看不到這一頁。表面上是天意，遙控器在你手上。（開啟方式：連點三下左上角 Logo）<br>
     <b>「設為下一抽」</b>＝把那張卡和「下一張要翻的卡」交換位置——下次翻牌就會出現它，原本的下一張則移到它的月份。</p>
     <div class="hostlist">${rows.join('')||'<div class="hrow">牌都抽完了。</div>'}</div>
+    <div class="hostsync">
+      <b>副控台連線</b>
+      <span>${SYNC.on
+        ? `已開啟・房號 <b>${SYNC.room}</b>（右側金色握把可看各桌進度）`
+        : '關閉中＝單機模式，行為與正式版完全相同'}</span>
+      <button class="ctl" onclick="hostSync()">${SYNC.on?'離　線':'開啟連線'}</button>
+    </div>
     <div class="formfoot">
       <button class="ctl" onclick="hostShuffle()">重洗剩餘牌序</button>
       <button class="ctl" onclick="hostCoop()">合作投資：${S.coop?'已開啟 ✓':'關閉中'}</button>
       <button class="ctl primary" onclick="closeOverlay()">關閉</button>
     </div>
   </div>`));
+}
+function hostSync(){
+  if(SYNC.on) syncStop(); else syncStart();
+  closeOverlay(); renderAll();
 }
 function hostCoop(){
   pushUndo();
@@ -2421,7 +2629,7 @@ function renderDrawer(){
     <div class="dlog">${x.log.map(l=>`<div class="${l.c}"><span class="m num">${l.m}月</span>${l.t}</div>`).join('')||'<div>還沒有紀錄。</div>'}</div>`;
 }
 function renderAll(){
-  renderAxis(); renderStage(); renderStrip(); renderSide(); renderControls(); renderTimer();
+  renderAxis(); renderStage(); renderStrip(); renderSide(); renderControls(); renderTimer(); renderSync();
   if($('#drawer').classList.contains('open')) renderDrawer();
   $('#btnMute').textContent = S.muted?'🔕':'🔔';
   requestAnimationFrame(fitStage);
