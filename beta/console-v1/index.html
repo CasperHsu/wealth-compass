@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%234A7C59'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='%23F7F4E9'%3E羅%3C/text%3E%3C/svg%3E">
+<title>視界致富羅盤・組長銀行台</title>
+<style>
+/* =====================================================================
+   視界致富羅盤・副控台（組長銀行台）
+   ---------------------------------------------------------------------
+   設計三原則（規格書第八節，逐條驗收）：
+     易讀 — 指令字 ≥32px、金額 ≥40px、一頁只有一個主要指令、顏色語意固定
+     易懂 — 完整白話句子，不出現遊戲術語，每張卡右下角有「為什麼」
+     易執行 — 主按鈕位置固定 ≥56px、每步都能上一步、點 N 下＝N 單位、全程免打字
+   顏色語意（全站不可改變）：綠＝發錢給學員／紅＝跟學員收錢／金＝投資相關
+===================================================================== */
+:root{
+  --cream:#F7F4E9; --paper:#FFFDF6; --ink:#2C2A24; --ink-soft:#6B6455;
+  --green:#4A7C59; --green-900:#2E4A38; --green-50:#E8F0E8;
+  --gold:#C9A24B; --gold-deep:#8A6A1E; --gold-50:#FAF2DD;
+  --brick:#A94436; --brick-900:#7A2E23; --brick-50:#FBE9E5;
+  --line:#DDD6C2; --line-2:#C9C0A6;
+  --serif:"Noto Serif TC","Songti TC",serif;
+  --sans:"Noto Sans TC","PingFang TC","Helvetica Neue",sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--cream);color:var(--ink);font-family:var(--sans);
+  overscroll-behavior:none;-webkit-user-select:none;user-select:none;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+
+/* ---------- 開場：房號 → 桌號 → 人數姓名 ---------- */
+#setup{position:fixed;inset:0;z-index:80;background:var(--cream);overflow:auto;padding:24px}
+.swrap{max-width:720px;margin:0 auto;padding-bottom:40px}
+.slogo{font-family:var(--serif);font-size:26px;color:var(--green-900);letter-spacing:.06em;text-align:center;margin:8px 0 2px}
+.ssub{text-align:center;color:var(--ink-soft);font-size:15px;margin-bottom:26px}
+.step{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px;margin-bottom:16px}
+.step h3{margin:0 0 4px;font-size:19px;color:var(--green-900);font-weight:700}
+.step p{margin:0 0 14px;font-size:14px;color:var(--ink-soft);line-height:1.6}
+.pick{display:flex;flex-wrap:wrap;gap:10px}
+.pick button{min-width:74px;height:60px;border:2px solid var(--line-2);border-radius:12px;
+  background:#fff;font-size:22px;font-weight:700;color:var(--ink)}
+.pick button.on{border-color:var(--green);background:var(--green);color:#fff}
+.roomin{width:100%;height:64px;border:2px solid var(--line-2);border-radius:12px;background:#fff;
+  font:700 30px/1 var(--sans);letter-spacing:.28em;text-align:center;text-transform:uppercase;color:var(--green-900);
+  -webkit-user-select:text;user-select:text}
+.names{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.names input{height:54px;border:1.5px solid var(--line-2);border-radius:10px;background:#fff;
+  padding:0 14px;font:400 18px/1 var(--sans);color:var(--ink);-webkit-user-select:text;user-select:text}
+.gobtn{width:100%;height:72px;border-radius:14px;background:var(--green);color:#fff;
+  font-size:24px;font-weight:700;letter-spacing:.08em;box-shadow:0 4px 0 var(--green-900)}
+.gobtn[disabled]{background:#B9B3A2;box-shadow:0 4px 0 #948E7D}
+
+/* ---------- 頂部狀態列 ---------- */
+#top{position:fixed;top:0;left:0;right:0;height:58px;z-index:40;display:flex;align-items:center;
+  gap:14px;padding:0 14px;background:var(--green-900);color:#fff}
+#top .mon{font-family:var(--serif);font-size:21px;letter-spacing:.04em;white-space:nowrap}
+#top .ph{font-size:15px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#top .sp{flex:1}
+#top .tag{font-size:13px;opacity:.8;white-space:nowrap}
+#top .dot{width:11px;height:11px;border-radius:50%;background:#7ED08F;flex:none}
+#top .dot.off{background:#E0705E}
+#top .menu{width:44px;height:44px;border-radius:10px;font-size:20px;opacity:.85;flex:none}
+
+/* ---------- 斷線橫幅 ---------- */
+#warn{position:fixed;top:58px;left:0;right:0;z-index:39;background:var(--brick);color:#fff;
+  padding:11px 14px;font-size:16px;font-weight:600;display:none;align-items:center;gap:12px}
+body.disconnected #warn{display:flex}
+#warn button{margin-left:auto;background:rgba(255,255,255,.18);border-radius:8px;padding:8px 14px;
+  font-size:14px;font-weight:600;color:#fff}
+
+/* ---------- 主體 ---------- */
+#app{display:none;padding:70px 14px 104px}
+body.ready #app{display:block}
+body.ready.disconnected #app{padding-top:118px}
+
+/* 指令卡。刻意壓縮高度：平板 1024×768 橫放時，指令卡與 6 張學員卡要同時看得到，
+   不能讓志工為了按到學員格而先捲動畫面 */
+#order{border-radius:16px;padding:13px 20px 11px;margin-bottom:11px;position:relative;
+  border:2px solid var(--line-2);background:var(--paper)}
+#order.give{border-color:var(--green);background:var(--green-50)}
+#order.take{border-color:var(--brick);background:var(--brick-50)}
+#order.inv {border-color:var(--gold); background:var(--gold-50)}
+.oline{display:flex;align-items:center;gap:10px;margin-bottom:3px}
+.obadge{font-size:14px;font-weight:700;letter-spacing:.1em;padding:4px 12px;border-radius:999px;
+  background:var(--ink-soft);color:#fff;white-space:nowrap}
+#order.give .obadge{background:var(--green)}
+#order.take .obadge{background:var(--brick)}
+#order.inv  .obadge{background:var(--gold-deep)}
+.ostep{font-size:14px;color:var(--ink-soft);margin-left:auto;white-space:nowrap}
+/* 驗收條件：指令主文永遠 ≥32px、金額 ≥40px，最小值寫死，小平板也不會縮到看不清 */
+.otitle{font-size:clamp(32px,3.4vw,42px);font-weight:800;line-height:1.32;letter-spacing:.01em}
+.omoney{font-size:clamp(42px,5.4vw,64px);font-weight:800;line-height:1.08;letter-spacing:-.01em;margin:1px 0 2px;
+  font-variant-numeric:tabular-nums}
+#order.give .omoney{color:var(--green-900)}
+#order.take .omoney{color:var(--brick-900)}
+#order.inv  .omoney{color:var(--gold-deep)}
+.onote{font-size:clamp(16px,1.8vw,19px);color:var(--ink);line-height:1.5;margin-top:4px}
+.owhy{margin-top:8px;padding-top:7px;border-top:1px dashed var(--line-2);
+  font-size:14px;color:var(--ink-soft);line-height:1.5}
+.owhy b{color:var(--ink)}
+.warnbar{margin-top:8px;background:#fff;border:1.5px solid var(--gold);border-radius:10px;
+  padding:8px 12px;font-size:14px;line-height:1.5;color:var(--gold-deep);font-weight:600}
+
+/* 學員格 */
+#grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+@media (max-width:820px){#grid{grid-template-columns:repeat(2,1fr)}}
+.stu{background:var(--paper);border:2px solid var(--line);border-radius:14px;padding:10px 12px 8px;
+  display:flex;flex-direction:column;min-height:126px;position:relative;transition:border-color .12s,background .12s}
+.stu .nm{display:flex;align-items:center;gap:7px;font-size:17px;font-weight:700;color:var(--green-900)}
+.stu .nm .idx{width:24px;height:24px;border-radius:50%;background:var(--line);color:var(--ink-soft);
+  font-size:13px;font-weight:700;display:grid;place-items:center;flex:none}
+.stu .amt{font-size:clamp(29px,3.3vw,38px);font-weight:800;font-variant-numeric:tabular-nums;
+  line-height:1.15;margin-top:6px;white-space:nowrap}
+.stu .sub{font-size:13px;color:var(--ink-soft);line-height:1.5;margin-top:2px}
+/* 右下角有小按鈕（抵／免／欠／−／借）時要留位置，帳本那行不能被蓋住 */
+.stu .led{margin-top:auto;padding-top:7px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--ink-soft);line-height:1.5;min-height:19px;padding-right:96px}
+.stu .led .bad{color:var(--brick);font-weight:700}
+.stu .led .lo{color:var(--gold-deep);font-weight:700}
+.stu .hit{position:absolute;inset:0;border-radius:12px}
+.stu.done{border-color:var(--green);background:var(--green-50)}
+.stu.done .amt{color:var(--green-900)}
+.stu.forced{border-color:var(--brick);background:var(--brick-50)}
+.stu.picked{border-color:var(--gold);background:var(--gold-50)}
+.stu.picked .amt{color:var(--gold-deep)}
+.tick{position:absolute;top:9px;right:10px;font-size:22px;color:var(--green);font-weight:800;display:none}
+.stu.done .tick{display:block}
+.stu.forced .tick{display:block;color:var(--brick)}
+.mini{position:absolute;bottom:8px;right:9px;display:flex;gap:6px;z-index:2}
+.mini button{height:34px;min-width:38px;padding:0 10px;border-radius:9px;border:1.5px solid var(--line-2);
+  background:#fff;font-size:14px;font-weight:700;color:var(--ink-soft)}
+.mini button.red{border-color:var(--brick);color:var(--brick)}
+.mini button.gold{border-color:var(--gold);color:var(--gold-deep)}
+
+/* 底部固定操作列 */
+#bar{position:fixed;left:0;right:0;bottom:0;z-index:40;height:88px;display:flex;align-items:center;
+  gap:12px;padding:0 14px;background:var(--paper);border-top:1.5px solid var(--line-2)}
+#bar .back{height:60px;min-width:118px;border-radius:12px;border:2px solid var(--line-2);
+  font-size:18px;font-weight:700;color:var(--ink-soft);background:#fff}
+#bar .back[disabled]{opacity:.35}
+#bar .mid{flex:1;text-align:center;font-size:14px;color:var(--ink-soft);line-height:1.45}
+#bar .go{height:64px;min-width:190px;padding:0 26px;border-radius:12px;background:var(--green);color:#fff;
+  font-size:22px;font-weight:800;letter-spacing:.05em;box-shadow:0 4px 0 var(--green-900)}
+#bar .go.ready{animation:pulse 1.5s ease-in-out infinite}
+#bar .go.fin{background:var(--gold-deep);box-shadow:0 4px 0 #5F4712}
+@keyframes pulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+/* 平板橫放常見是 1024×768，畫面高度吃緊時整體再壓一階，
+   目標是「指令卡＋6 張學員卡一眼全看到，不用捲動」 */
+@media (max-height:820px){
+  #order{padding:10px 18px 8px;margin-bottom:9px}
+  .otitle{font-size:clamp(32px,3.1vw,36px);line-height:1.25}
+  .omoney{font-size:clamp(42px,4.6vw,54px)}
+  .onote{font-size:16px;line-height:1.45;margin-top:3px}
+  .owhy{margin-top:6px;padding-top:6px;font-size:13px}
+  .warnbar{margin-top:6px;padding:7px 11px;font-size:13px}
+  #grid{gap:9px}
+  .stu{min-height:116px;padding:9px 11px 7px}
+  #app{padding-top:66px}
+}
+
+/* 等待畫面 */
+.waitbox{text-align:center;padding:44px 20px;color:var(--ink-soft)}
+.waitbox .big{font-family:var(--serif);font-size:clamp(24px,3.2vw,34px);color:var(--green-900);
+  margin-bottom:10px;line-height:1.45}
+.waitbox .sm{font-size:16px;line-height:1.7}
+
+/* 抽屜：學員明細／設定 */
+#drawer{position:fixed;inset:0;z-index:60;background:rgba(30,28,22,.5);display:none}
+#drawer.open{display:block}
+.dpanel{position:absolute;top:0;right:0;bottom:0;width:min(430px,92vw);background:var(--paper);
+  overflow:auto;padding:18px 18px 40px;box-shadow:-6px 0 24px rgba(0,0,0,.18)}
+.dpanel h3{margin:0 0 4px;font-size:21px;color:var(--green-900)}
+.dpanel .dx{position:absolute;top:12px;right:14px;width:42px;height:42px;border-radius:10px;
+  font-size:20px;color:var(--ink-soft);background:var(--cream)}
+.drow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.drow .k{font-size:15px;flex:1;line-height:1.45}
+.drow .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+.drow .adj{display:flex;gap:6px}
+.drow .adj button{width:40px;height:40px;border-radius:9px;border:1.5px solid var(--line-2);
+  background:#fff;font-size:18px;font-weight:700;color:var(--ink-soft)}
+.dsec{margin-top:20px;font-size:13px;letter-spacing:.14em;color:var(--ink-soft);font-weight:700}
+.dbtn{width:100%;height:54px;border-radius:11px;border:2px solid var(--line-2);background:#fff;
+  font-size:16px;font-weight:700;color:var(--ink);margin-top:10px}
+.dbtn.red{border-color:var(--brick);color:var(--brick)}
+
+/* 提示訊息 */
+#toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%) translateY(14px);z-index:70;
+  background:var(--green-900);color:#fff;padding:13px 22px;border-radius:11px;font-size:16px;font-weight:600;
+  opacity:0;pointer-events:none;transition:.22s;max-width:88vw;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ 開場：三步 ══════════════ -->
+<div id="setup"><div class="swrap">
+  <div class="slogo">視界致富羅盤・組長銀行台</div>
+  <div class="ssub">這台只有你看得到，請把螢幕背對學員</div>
+
+  <div class="step">
+    <h3>① 房號</h3>
+    <p>講師會在台上報房號，通常就是預設的 VISION。平板要能上網才連得到講師。</p>
+    <input class="roomin" id="inRoom" value="VISION" maxlength="8" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="step">
+    <h3>② 你負責第幾桌</h3>
+    <p>跟講師確認一下，不要跟別桌重複。</p>
+    <div class="pick" id="pkTable"></div>
+  </div>
+
+  <div class="step">
+    <h3>③ 這桌有幾位學員</h3>
+    <p>姓名可以不填，不填就顯示學員 A、學員 B……，中途也能再改。</p>
+    <div class="pick" id="pkNum"></div>
+    <div class="names" id="nmBox" style="margin-top:14px"></div>
+  </div>
+
+  <button class="gobtn" id="goBtn" onclick="startConsole()">開始</button>
+</div></div>
+
+<!-- ══════════════ 主畫面 ══════════════ -->
+<div id="top">
+  <span class="mon" id="tMon">—</span>
+  <span class="ph" id="tPh"></span>
+  <span class="sp"></span>
+  <span class="dot" id="tDot"></span>
+  <span class="tag" id="tTag"></span>
+  <button class="menu" onclick="openDrawer('set')">☰</button>
+</div>
+
+<div id="warn">
+  <span id="warnTxt">⚠ 和講師的主控台失去連線，正在重新連上</span>
+  <button onclick="goManual()">改用手動模式</button>
+</div>
+
+<div id="app">
+  <div id="order"></div>
+  <div id="grid"></div>
+</div>
+
+<div id="bar">
+  <button class="back" id="bBack" onclick="prevStep()">↩ 上一步</button>
+  <div class="mid" id="bMid"></div>
+  <button class="go" id="bGo" onclick="nextStep()">完成</button>
+</div>
+
+<div id="drawer" onclick="if(event.target===this)closeDrawer()"><div class="dpanel" id="dPanel"></div></div>
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   0. 小工具
+===================================================================== */
+const $=s=>document.querySelector(s);
+const fm=n=>{ n=Math.round(n||0); return (n<0?'-':'')+Math.abs(n).toLocaleString('en-US'); };
+const money=n=>'＄'+fm(n);
+const LET='ABCDEF';
+let toastT=null;
+function toast(msg){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2200);
+}
+
+/* =====================================================================
+   1. 本桌帳本（存在這台裝置自己的 localStorage，斷線也不會丟）
+   ---------------------------------------------------------------------
+   hold  ：這桌買過的投資。key＝卡片代號，units[i]＝第 i 位學員買了幾單位
+   loan  ：投資貸款（學員主動開口借的，好債）
+   debt  ：被迫負債（繳不出錢自動產生的，壞債，紅字）
+   other ：知識變現換來的每月固定收入
+   give  ：公益勸募的累計捐款（第 9 月重大事故要用來算保留額）
+   marks ：每一個步驟的打勾與點數，key＝「月|階段|步驟代號」
+===================================================================== */
+const CKEY='zfl-console-v1';
+const MAXSTU=6;
+let CS=null;
+
+function newLedger(){
+  return { v:1, room:'VISION', table:1, n:6, names:['','','','','',''],
+           hold:{}, loan:z6(), debt:z6(), other:z6(), give:z6(),
+           marks:{}, cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
+}
+function z6(){ return [0,0,0,0,0,0]; }
+function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e){} }
+function loadCS(){
+  try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
+       const o=JSON.parse(raw); return (o&&o.v===1)?o:null; }catch(e){ return null; }
+}
+function nameOf(i){ return (CS.names[i]||'').trim() || ('學員 '+LET[i]); }
+
+/* =====================================================================
+   2. 連線：兩條腿同時走，任一條掛掉另一條照常
+      ① BroadcastChannel＝跟講師同一台電腦、另開分頁時用。免網路。
+      ② Supabase Realtime＝志工用自己的平板時用。走原生 WebSocket 講 Phoenix 協定，
+         不載入 supabase-js，維持單檔零依賴。
+      兩條線路會收到同一封包，靠 sid／seq 過濾，處理一次就好。
+===================================================================== */
+let TX=null, ST=null, lastRx=0, hbT=null;
+const STALE_MS=20000;   /* 超過 20 秒沒收到主控的訊息＝視為斷線 */
+
+/* 這把 anon key 只能進出廣播頻道；專案裡沒有任何資料表 */
+const RT_HOST='xfxibwzmpysvyakuhdge.supabase.co';
+const RT_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGlid3ptcHlzdnlha3VoZGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDM0MDMsImV4cCI6MjEwMDU3OTQwM30.u0kA2XuBoQSgW7Mcf9BPlxLtLKYxwU3LUYAy6-I3Bxg';
+
+function makeRealtimeLeg(room, onMsg, onUp){
+  if(typeof WebSocket==='undefined') return null;
+  const topic='realtime:wc:'+room;
+  const url='wss://'+RT_HOST+'/realtime/v1/websocket?apikey='+RT_KEY+'&vsn=1.0.0';
+  let ws=null, joined=false, ref=0, hb=null, miss=0, wait=null, tries=0, dead=false;
+  /* 一定要先看 readyState：socket 正在關閉時 ws.send() 在 Chrome 不會丟例外，
+     而是直接往 console 印紅字，try/catch 攔不到，真正的錯誤會被這種雜訊埋掉 */
+  const raw=o=>{ if(!ws || ws.readyState!==1) return;
+                 try{ ws.send(JSON.stringify(o)); }catch(e){} };
+
+  function open(){
+    if(dead) return;
+    try{ ws=new WebSocket(url); }catch(e){ ws=null; later(); return; }
+    ws.onopen=()=>{
+      joined=false; miss=0;
+      raw({ topic, event:'phx_join', ref:String(++ref), join_ref:'1',
+            payload:{ config:{ broadcast:{self:false,ack:false}, presence:{key:''}, private:false },
+                      access_token:RT_KEY } });
+      clearInterval(hb);
+      hb=setInterval(()=>{
+        if(!ws || ws.readyState!==1) return;
+        if(miss>=2){ fail(); return; }   /* 連兩次心跳沒回應＝線其實已經斷了，重連 */
+        miss++; raw({ topic:'phoenix', event:'heartbeat', payload:{}, ref:String(++ref) });
+      },20000);
+    };
+    ws.onmessage=e=>{
+      let m; try{ m=JSON.parse(e.data); }catch(err){ return; }
+      if(m.event==='phx_reply'){
+        miss=0;
+        if(m.topic===topic && m.payload && m.payload.status==='ok' && !joined){
+          joined=true; tries=0; try{ onUp&&onUp(); }catch(err){}
+        }
+        return;
+      }
+      if(m.event==='broadcast'){
+        if(m.payload && m.payload.payload){ try{ onMsg(m.payload.payload); }catch(err){} }
+        return;
+      }
+      if(m.event==='phx_error' || m.event==='phx_close') fail();
+    };
+    ws.onerror=()=>{};
+    ws.onclose=()=>fail();
+  }
+  function fail(){
+    joined=false; clearInterval(hb); hb=null;
+    if(ws){ try{ ws.onclose=null; ws.onmessage=null; ws.close(); }catch(e){} ws=null; }
+    later();
+  }
+  function later(){   /* 退避重連：0.7→1.4→2.8→5.6→8 秒，加亂數避免五台平板同時湧上 */
+    if(dead || wait) return;
+    wait=setTimeout(()=>{ wait=null; open(); },
+      Math.min(8000, 700*Math.pow(2, Math.min(tries++,4))) + Math.random()*300);
+  }
+  open();
+  return { kind:'rt', up:()=>joined,
+    send:o=>{ if(joined) raw({ topic, event:'broadcast', ref:String(++ref),
+                               payload:{ type:'broadcast', event:'msg', payload:o } }); },
+    /* 平板睡醒、WiFi 剛回來時立刻重連，不用等退避倒數 */
+    poke:()=>{ if(dead||joined) return;
+               if(ws && ws.readyState===0) return;     /* 正在連，別打斷它 */
+               clearTimeout(wait); wait=null; tries=0; clearInterval(hb); hb=null;
+               if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; }
+               open(); },
+    close:()=>{ dead=true; clearInterval(hb); clearTimeout(wait);
+                if(ws){ try{ ws.onclose=null; ws.close(); }catch(e){} ws=null; } } };
+}
+
+function makeTransport(room, onMsg, onUp){
+  const legs=[];
+  if(typeof BroadcastChannel!=='undefined'){
+    try{
+      const ch=new BroadcastChannel('wc:'+room);
+      ch.onmessage=e=>{ try{ onMsg(e.data); }catch(err){} };
+      legs.push({ kind:'bc', up:()=>true, poke:()=>{},
+                  send:o=>{ try{ ch.postMessage(o); }catch(err){} },
+                  close:()=>{ try{ ch.close(); }catch(err){} } });
+    }catch(e){}
+  }
+  const rt=makeRealtimeLeg(room, onMsg, onUp);
+  if(rt) legs.push(rt);
+  if(!legs.length) return null;
+  const poke=()=>legs.forEach(l=>{ try{ l.poke(); }catch(e){} });
+  const onWake=()=>{ if(!document.hidden) poke(); };
+  addEventListener('online', poke);
+  document.addEventListener('visibilitychange', onWake);
+  return {
+    send:o=>legs.forEach(l=>{ try{ l.send(o); }catch(e){} }),
+    net:()=>legs.some(l=>l.kind==='rt' && l.up()),   /* 跨裝置那條通了沒 */
+    poke,
+    close:()=>{ removeEventListener('online', poke);
+                document.removeEventListener('visibilitychange', onWake);
+                legs.forEach(l=>{ try{ l.close(); }catch(e){} }); } };
+}
+function connect(){
+  if(TX){ TX.close(); TX=null; }
+  TX=makeTransport(CS.room, onMsg, ()=>{ hello(); });   /* 網路一接通就報到，立刻要一份完整狀態 */
+  if(!TX){ toast('這個瀏覽器不支援自動連線，已切到手動模式'); goManual(); return; }
+  hello();
+  clearInterval(hbT);
+  hbT=setInterval(()=>{ report(); checkLink(); }, 4000);
+  checkLink();
+}
+function hello(){ if(TX) TX.send({t:'hello', table:CS.table}); }
+function onMsg(m){
+  if(!m || m.t!=='state') return;
+  /* 兩條線路會各送一份同樣的封包，處理一次就好；
+     講師重整頁面後 seq 會歸零，所以要連 sid 一起看，否則新封包會被誤判成舊的。 */
+  if(ST && m.sid===ST.sid && m.seq && ST.seq && m.seq <= ST.seq) return;
+  ST=m; lastRx=Date.now();
+  CS.manual=false;
+  checkLink();      /* 一收到訊息就把紅色橫幅收掉，不用等 4 秒心跳 */
+  applyState();
+}
+function report(){
+  if(!TX) return;
+  TX.send({ t:'status', table:CS.table, name:`第 ${CS.table} 桌`,
+            students:CS.n, done:allDone(), round:(ST&&ST.round)||CS.mRound });
+}
+function checkLink(){
+  const off = !CS.manual && (!ST || Date.now()-lastRx > STALE_MS);
+  document.body.classList.toggle('disconnected', off);
+  $('#tDot').classList.toggle('off', off || CS.manual);
+  if(!ST && !CS.manual){
+    $('#warnTxt').textContent='⚠ 還沒連上講師的主控台（請講師開啟連線）';
+  }else{
+    $('#warnTxt').textContent='⚠ 和講師的主控台失去連線，正在重新連上（帳本都還在，可以繼續記）';
+  }
+}
+/* 始終連不上時的退路：手動選月份，自己挑要做的事 */
+function goManual(){
+  CS.manual=true; document.body.classList.remove('disconnected');
+  saveCS(); openDrawer('manual');
+}
+
+/* =====================================================================
+   3. 帳本計算
+===================================================================== */
+const N=()=>CS.n;
+function nums(){
+  const d={ stressCost:30000, marryExtra:5000, knowUnit:1000, joblessSaveCost:6000,
+            charityUnit:1000, charityCover:100000, accidentCost:300000, unlockFee:1000 };
+  return Object.assign(d, (ST&&ST.nums)||{});
+}
+function loanUnit(){ return (ST&&ST.loan&&ST.loan.unit)||10000; }
+function loanRate(){ return ((ST&&ST.loan&&ST.loan.ratePct)||10)/100; }
+function funPer(){ return (ST&&ST.fun&&ST.fun.per)||2000; }
+function funCover(){ return (ST&&ST.fun&&ST.fun.cover)||10000; }
+function curRound(){ return CS.manual ? CS.mRound : ((ST&&ST.round)||0); }
+
+/* 某筆投資開牌後，本金是否還留著（＝還算在投資總額裡）
+   開牌後仍有配息／新增現金流的就是長期持有；純還本或血本無歸的就結束了 */
+function stillHeld(h){
+  if(!h.st) return true;
+  if(h.st.dead) return false;
+  if((h.st.keepCf||0)+(h.st.addCf||0)+(h.st.extraCf||0) > 0) return true;
+  return !h.st.backPrincipal;
+}
+/* 第 i 位學員在第 r 月的每月被動收入（投資配息，失業月照領） */
+function passiveOf(i,r){
+  let s=0;
+  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0;
+    if(!u || h.buy>=r) continue;                       /* 買進的當月不配息，次月起才有 */
+    if(h.st && r>h.st.round) s += u*((h.st.keepCf||0)+(h.st.addCf||0));
+    else s += u*(h.cf||0);
+  }
+  return s;
+}
+/* 第 i 位學員的每月其他收入（知識變現＋創業分潤；失業月會停發） */
+function otherOf(i,r){
+  let s=CS.other[i]||0;
+  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0;
+    if(u && h.st && r>h.st.round) s += u*(h.st.extraCf||0);
+  }
+  return s;
+}
+/* 第 i 位學員手上還留著的投資總額（本金） */
+function assetOf(i){
+  let s=0;
+  for(const k in CS.hold){ const h=CS.hold[k];
+    if(stillHeld(h)) s += (h.units[i]||0)*h.price; }
+  return s;
+}
+function debtOf(i){ return (CS.loan[i]||0)+(CS.debt[i]||0); }
+function interestOf(i){ return Math.round(debtOf(i)*loanRate()); }
+
+/* 主控廣播開牌資料 → 寫進帳本（同一張卡只寫一次，重複收到不會算兩次） */
+function absorbSettle(){
+  if(!ST || !ST.settle) return;
+  let changed=false;
+  ST.settle.forEach(s=>{
+    const h=CS.hold[s.id]; if(!h || h.st) return;
+    h.st={ round:ST.round, perUnit:s.perUnit||0, dead:!!s.dead,
+           backPrincipal:!!s.backPrincipal, addCf:s.addCf||0,
+           extraCf:s.extraCf||0, keepCf:s.keepCf||0 };
+    changed=true;
+  });
+  if(changed) saveCS();
+}
+
+/* =====================================================================
+   4. 本月步驟表
+   ---------------------------------------------------------------------
+   副控台不自己決定要發生什麼事，一律照主控台廣播的階段走。
+   每個階段拆成一到數個步驟，畫面一次只顯示一個步驟。
+   mode：give＝發錢給學員（綠）／take＝跟學員收錢（紅）
+         units＝投資點單位（金）／count＝點數量（知識變現、捐款）
+         check＝只要逐人確認／info＝純告知，不用動錢
+===================================================================== */
+function buildSteps(){
+  if(CS.manual) return manualSteps();
+  if(!ST || !ST.started) return [];
+  const r=ST.round, out=[];
+  if(ST.round>ST.rounds) return [{ id:'final', mode:'info', badge:'結束',
+    title:'12 個月跑完了', note:'請學員自己算：手上現金 ＋ 投資總額 － 負債＝淨資產。你可以打開右上角「☰ → 本桌總覽」把每個人的投資與負債唸給他們對。',
+    why:'最後要比的是淨資產和每月淨現金流，不是誰手上現金多。' }];
+
+  switch(ST.phase){
+    case 'salary': {
+      out.push(salaryStep(r));
+      (ST.settle||[]).forEach(s=>out.push(settleStep(s,r)));
+      break;
+    }
+    case 'allocate':
+      out.push({ id:'alloc', mode:'info', badge:'等一下',
+        title:'等學員把這個月的收入分到各帳戶',
+        note:'這一步學員自己動手擺籌碼，你不用收也不用發。看到大家都擺完了，再按完成。',
+        why:'先分配再花錢，是六個帳戶的核心習慣——錢一進來就先分流，剩下的才是能花的。' });
+      break;
+    case 'event':
+      out.push({ id:'wait', mode:'info', badge:'等一下',
+        title:'等講師翻開這個月的事件卡',
+        note:'卡片翻開後，這裡會自動告訴你要收多少或發多少。',
+        why:'事件由講師統一翻牌，全班一起結算，才不會有人搶快。' });
+      break;
+    case 'drawn': {
+      const c=ST.card;
+      if(c) out.push(cardStep(c,r));
+      else out.push({ id:'nocard', mode:'info', badge:'這個月', title:'這個月沒有要結算的事件',
+        note:'等講師繼續往下走。', why:'' });
+      break;
+    }
+    case 'expense': {
+      out.push(expenseStep(r));
+      (ST.fixed||[]).forEach(f=>out.push(fixedStep(f,r)));
+      break;
+    }
+  }
+  return out;
+}
+
+function salaryStep(r){
+  const jobless=!!ST.jobless;
+  return {
+    id:'salary', mode:'give', badge:'發錢',
+    title: jobless ? '這個月停薪，只發投資的被動收入' : '發這個月的收入',
+    money: jobless ? null : ST.income, moneyLabel:'薪水每人',
+    note: jobless
+      ? '薪水和知識變現的收入這個月都停發，只有投資配息照發。沒有投資的人這個月一毛都不會領到。'
+      : '每個人的薪水一樣，但有投資、有做知識變現的人會多領，所以每一格的金額請照著發。',
+    why: jobless
+      ? '這就是失業的真實樣貌——主動收入說停就停，只有被動收入不會離開你。'
+      : '被動收入是「不上班也會進來的錢」，這場遊戲要贏就是靠它長大。',
+    amountOf:(i)=>{
+      const p=passiveOf(i,r), o=otherOf(i,r);
+      const base = jobless ? 0 : ST.income + o;
+      return base + p;
+    },
+    subOf:(i)=>{
+      const p=passiveOf(i,r), o=otherOf(i,r); const bits=[];
+      if(!jobless) bits.push('薪水 '+fm(ST.income));
+      if(!jobless && o) bits.push('其他收入 '+fm(o));
+      if(p) bits.push('投資配息 '+fm(p));
+      return bits.length?bits.join('　'):'這個月沒有收入';
+    }
+  };
+}
+function settleStep(s,r){
+  const h=CS.hold[s.id];
+  const anyone = h && h.units.some(u=>u>0);
+  if(s.dead){
+    return { id:'st_'+s.id, mode:'check', badge:'開牌', tone:'take',
+      title:'開牌：'+s.title+'　→　血本無歸',
+      note: anyone ? '投了這張的人，投進去的錢全部收不回來，不用發任何錢給他，把他的投資籌碼收走。'
+                   : '這桌沒有人投這一張，直接按完成就好。',
+      why:'同一張「危機入市」，有人翻倍有人歸零——這就是為什麼投資前要先看懂自己承受得起多少。',
+      amountOf:(i)=>0,
+      subOf:(i)=>{ const u=(h&&h.units[i])||0; return u? `投了 ${u} 單位（${fm(u*s.unit)}）全部歸零` : '沒有投'; } };
+  }
+  return { id:'st_'+s.id, mode:'give', badge:'開牌',
+    title:'開牌：'+s.title+'　→　發投資報酬',
+    note: anyone ? '照著每一格的金額發給他們。'+(s.backPrincipal?'這張含本金退還，發完他手上就沒有這筆投資了。':'本金繼續留著，之後每個月還會有配息。')
+                 : '這桌沒有人投這一張，直接按完成就好。',
+    why:'兩個月前敢投的人，現在拿到報酬——投資的果實從來不是當下就看得到的。',
+    amountOf:(i)=>((h&&h.units[i])||0)*(s.perUnit||0),
+    subOf:(i)=>{ const u=(h&&h.units[i])||0;
+      return u? `${u} 單位 × 每單位 ${fm(s.perUnit)}` : '沒有投'; } };
+}
+function cardStep(c,r){
+  /* 投資機會：點 N 下＝N 單位 */
+  if(c.unit>0){
+    return { id:'card_'+c.id, mode:'units', badge:'投資', price:c.unit, cardId:c.id, cf:c.cf||0,
+      title:c.title,
+      money:c.unit,
+      note:'每 1 單位 '+fm(c.unit)+'。'+(c.cf>0?('買了之後從下個月起，每 1 單位每月配息 '+fm(c.cf)+'。'):'')
+           +'誰要投、投幾單位，由學員自己說；你在他的格子上點幾下就是幾單位。',
+      why:'投資只能用「投資帳戶」的錢，這是遊戲規則，也是現實裡最該守住的一條線。',
+      guard:true };
+  }
+  /* 好消息：發錢 */
+  if(c.amt>0){
+    return { id:'card_'+c.id, mode:'give', badge:'發錢', title:c.title, money:c.amt,
+      note:'每一位都發 '+fm(c.amt)+'。',
+      why:'意外之財最容易蒸發——這筆錢要進哪個帳戶，才是真正的考驗。',
+      amountOf:()=>c.amt };
+  }
+  /* 支出：收錢；大額消費可用娛樂帳戶抵扣 */
+  if(c.amt<0){
+    const cost=-c.amt, off=(c.kind==='bigspend');
+    return { id:'card_'+c.id, mode:'take', badge:'收錢', title:c.title, money:cost,
+      offset: off?{per:funPer(), cover:funCover(), label:'娛樂抵扣'}:null,
+      note:'每一位都收 '+fm(cost)+'。'+(off?('有存娛樂帳戶的人，每 '+fm(funPer())+' 可以折抵 '+fm(funCover())+'，用右下角的「抵」加上去。'):''),
+      why: off ? '娛樂預算不是浪費，它是擋住報復性消費的那道牆。'
+               : '小錢的破口不會讓你破產，但會慢慢偷走你的未來。',
+      amountOf:()=>cost };
+  }
+  /* 平安月 */
+  return { id:'card_'+c.id, mode:'info', badge:'平安', title:c.title,
+    note:'這個月不用收錢也不用發錢，直接按完成。',
+    why:'財務系統最好的狀態，就是無聊。' };
+}
+function expenseStep(r){
+  const jobless=!!ST.jobless, nm=nums();
+  return { id:'expense', mode:'take', badge:'收錢', title:'收這個月的生活費',
+    money:ST.expense, moneyLabel:'生活費每人',
+    note:'每一位都收 '+fm(ST.expense)+'。有欠銀行錢的人，要再多收利息（每一格會自己算好）。'
+         +(jobless?('　停薪月：他如果願意付 '+fm(nm.joblessSaveCost)+' 儲蓄，這個月的生活費就免收，用右下角的「免」。'):'')
+         +'　真的拿不出錢的人，按右下角紅色的「欠」，記成被迫負債。',
+    why:'生活費是每個月一定跑不掉的支出，繳不出來就只能借錢——這就是負債開始的地方。',
+    saveWaive: jobless ? nm.joblessSaveCost : 0,
+    amountOf:(i)=>ST.expense + interestOf(i),
+    subOf:(i)=>{ const it=interestOf(i);
+      return it? ('生活費 '+fm(ST.expense)+'　欠款利息 '+fm(it)) : '本月固定生活支出'; },
+    allowDebt:true };
+}
+function fixedStep(f,r){
+  const nm=nums();
+  const base={ id:'fx_'+f.id, badge:'月底事件', title:f.title, note:f.brief };
+  switch(f.id){
+    case 'mindless':
+      return Object.assign(base,{ mode:'check',
+        note:'有開 2 個以上帳戶的人，直接打勾過關。只開 0～1 個帳戶的人是月光族——把他手上的現金和生活帳戶的錢全部收回，從這個月起每個月底都要收一次。',
+        why:'沒有被分配過的錢，總是無聲無息地消失，這就是月光的真正原因。' });
+    case 'stress':
+      return Object.assign(base,{ mode:'take', money:nm.stressCost,
+        offset:{per:funPer(), cover:funCover(), label:'娛樂抵扣'},
+        note:'每一位都收 '+fm(nm.stressCost)+'。有存娛樂帳戶的人，每 '+fm(funPer())+' 折抵 '+fm(funCover())+'，用右下角的「抵」加上去；存滿 '+fm(funPer()*3)+' 就完全不用付。',
+        why:'壓力一來就想花錢，是人性。事先編好娛樂預算的人，才不會被這一下打亂陣腳。',
+        amountOf:()=>nm.stressCost });
+    case 'marry':
+      return Object.assign(base,{ mode:'info',
+        note:'這個月不用收錢。從下個月開始，每個人的生活費永久增加 '+fm(nm.marryExtra)+'，畫面會自己改成新的金額，你不用記。',
+        why:'人生階段一變，固定支出就跟著往上——收入沒有同步長大的人，就會被卡住。' });
+    case 'know':
+      return Object.assign(base,{ mode:'count', unitAmt:nm.knowUnit, take:true, ledger:'other',
+        title:'知識變現', money:null,
+        note:'學員說要換多少，就在他格子上點幾下，一下 '+fm(nm.knowUnit)+'（同時跟他收走學習帳戶裡同樣的錢）。換完之後，他每個月會多領這筆錢，畫面會自己加進去。',
+        why:'投資自己換來的收入，是最穩、也最不會被別人拿走的一種。' });
+    case 'jobless':
+      return Object.assign(base,{ mode:'info',
+        why:'手上永遠留著緊急備用金，是你對抗無常的底氣。' });
+    case 'charity':
+      return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, ledger:'give',
+        title:'公益勸募', money:null,
+        note:'想捐的人自己說要捐多少，一下 '+fm(nm.charityUnit)+'，從貢獻帳戶收。系統會自己記住每個人捐了多少，第 9 月會用到，你不用另外抄。',
+        why:'佈施看似給出去，其實是替自己佈下一張安全網。' });
+    case 'accident':
+      return Object.assign(base,{ mode:'take', money:nm.accidentCost,
+        note:'每一位都收 '+fm(nm.accidentCost)+'。之前捐過款的人有貴人相助，每捐 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'，捐滿 '+fm(nm.charityUnit*3)+' 就完全不用付。每一格已經幫你算好實際要收多少了。',
+        why:'你平時種下的善意，會在最壞的時刻回來接住你。',
+        amountOf:(i)=>{
+          const units=Math.floor((CS.give[i]||0)/nm.charityUnit);
+          return Math.max(0, nm.accidentCost - Math.min(3,units)*nm.charityCover);
+        },
+        subOf:(i)=>{
+          const units=Math.floor((CS.give[i]||0)/nm.charityUnit);
+          if(!units) return '沒有捐過款，全額自付';
+          const keep=Math.min(3,units)*nm.charityCover;
+          return '捐過 '+fm(CS.give[i])+'　貴人保留 '+fm(keep);
+        },
+        allowDebt:true });
+    case 'realloc':
+      return Object.assign(base,{ mode:'check',
+        why:'能定期回頭檢查自己的分配比例，比一次分對更重要。' });
+  }
+  return Object.assign(base,{ mode:'check', why:'' });
+}
+/* 手動模式：連不上主控時，組長自己選月份與要做的事 */
+function manualSteps(){
+  const r=CS.mRound, nm=nums();
+  const acts={
+    salary:{ id:'m_salary', mode:'give', badge:'發錢', title:'發這個月的收入', money:50000,
+      note:'照講師報的金額發。每一格已經把這位學員的投資配息加進去了。',
+      why:'被動收入是不上班也會進來的錢。',
+      amountOf:(i)=>50000+passiveOf(i,r)+otherOf(i,r),
+      subOf:(i)=>{ const p=passiveOf(i,r); return p?('含投資配息 '+fm(p)):'薪水'; } },
+    expense:{ id:'m_expense', mode:'take', badge:'收錢', title:'收這個月的生活費', money:30000,
+      note:'照講師報的金額收。拿不出來的人按紅色的「欠」。',
+      why:'繳不出生活費就只能借錢，這就是負債的起點。',
+      amountOf:(i)=>30000+interestOf(i), allowDebt:true },
+    invest:{ id:'m_invest', mode:'units', badge:'投資', price:10000, cardId:'manual_'+r, cf:0,
+      title:'投資機會（手動）', money:10000,
+      note:'手動模式下每單位先當 10,000 記。點幾下＝幾單位，之後連上主控會用主控的金額為準。',
+      why:'投資只能用投資帳戶的錢。', guard:true },
+    check:{ id:'m_check', mode:'check', badge:'確認', title:'逐人確認這個月的事件',
+      note:'照講師在台上說的做，做完的人打勾。', why:'' }
+  };
+  return CS.mAct && acts[CS.mAct] ? [acts[CS.mAct]] : [];
+}
+
+/* =====================================================================
+   5. 畫面
+===================================================================== */
+let STEPS=[];
+function markKey(st){ return curRound()+'|'+(CS.manual?'manual':(ST?ST.phase:'-'))+'|'+st.id; }
+function markOf(st){
+  const k=markKey(st);
+  if(!CS.marks[k]) CS.marks[k]={ tick:[0,0,0,0,0,0], cnt:[0,0,0,0,0,0], forced:[0,0,0,0,0,0], loan:[0,0,0,0,0,0] };
+  return CS.marks[k];
+}
+function applyState(){
+  absorbSettle();
+  const key=phaseKey();
+  if(CS.cur.k!==key){ CS.cur={ k:key, i:0 }; }   /* 講師推進到下一階段 → 副控自動跳到第一步 */
+  render(); saveCS(); report();
+}
+function render(){
+  if(!CS) return;
+  STEPS=buildSteps();
+  if(CS.cur.i>=STEPS.length) CS.cur.i=Math.max(0,STEPS.length-1);
+  renderTop(); renderOrder(); renderBar();
+}
+function phaseName(){
+  if(CS.manual) return '手動模式';
+  if(!ST) return '尚未連線';
+  if(!ST.started) return '講師還沒開始';
+  if(ST.round>ST.rounds) return '遊戲結束';
+  return { salary:'發薪日', allocate:'學員分配收入', event:'準備翻牌',
+           drawn:'事件結算', expense:'繳生活費' }[ST.phase] || '';
+}
+function renderTop(){
+  const r=curRound(), tot=(ST&&ST.rounds)||12;
+  $('#tMon').textContent = r? `第 ${r} 月／${tot}` : '第 — 月';
+  $('#tPh').textContent = phaseName();
+  $('#tTag').textContent = `${CS.room}・第 ${CS.table} 桌`;
+}
+function renderOrder(){
+  const box=$('#order'), grid=$('#grid');
+  const st=STEPS[CS.cur.i];
+  if(!st){
+    box.className=''; box.innerHTML='';
+    grid.innerHTML=`<div class="waitbox" style="grid-column:1/-1">
+      <div class="big">${CS.manual?'手動模式：請從右上角 ☰ 選這一步要做什麼':'等講師開始這個月'}</div>
+      <div class="sm">畫面會自己跟著講師的主控台走，你不用做任何事。<br>本桌的帳本都存在這台裝置裡，不會不見。</div></div>`;
+    return;
+  }
+  const tone = st.tone || ({give:'give', take:'take', units:'inv', count:'inv'}[st.mode] || '');
+  box.className = tone;
+  const badgeTxt = st.badge || '';
+  let money='';
+  if(st.money!=null && st.money!==0) money=`<div class="omoney">${moneyLine(st)}</div>`;
+  box.innerHTML=`
+    <div class="oline">
+      <span class="obadge">${badgeTxt}</span>
+      <span class="ostep">第 ${CS.cur.i+1} 步／共 ${STEPS.length} 步</span>
+    </div>
+    <div class="otitle">${st.title||''}</div>
+    ${money}
+    ${st.note?`<div class="onote">${st.note}</div>`:''}
+    ${st.guard?`<div class="warnbar">請勿主動詢問學員要不要貸款投資——學員自己開口才辦。</div>`:''}
+    ${st.why?`<div class="owhy"><b>為什麼：</b>${st.why}</div>`:''}`;
+  renderGrid(st);
+}
+/* 指令卡上的大數字。有些步驟每個人的金額不一樣（薪水含配息、生活費含利息），
+   大數字只寫「大家共同的那一段」，實際要收發多少一律以每位學員格子上的數字為準。 */
+function moneyLine(st){
+  if(st.moneyLabel) return st.moneyLabel+' ＄'+fm(st.money);
+  if(st.mode==='give') return '每人 ＄'+fm(st.money);
+  if(st.mode==='take') return '每人 ＄'+fm(st.money);
+  if(st.mode==='units') return '每單位 ＄'+fm(st.money);
+  return '＄'+fm(st.money);
+}
+function renderGrid(st){
+  const grid=$('#grid'); const m=markOf(st); const r=curRound();
+  if(st.mode==='info'){
+    grid.innerHTML = (st.id==='final') ? finalGrid()
+      : `<div class="waitbox" style="grid-column:1/-1">
+          <div class="big">這一步不用收錢也不用發錢</div>
+          <div class="sm">看完上面那段話、確認學員都懂了，按右下角的「完成」。</div></div>`;
+    return;
+  }
+  let h='';
+  for(let i=0;i<N();i++){
+    const cls=[];
+    let big='', sub='', mini='';
+    if(st.mode==='give'||st.mode==='take'){
+      const forced=m.forced[i];
+      const amt = st.amountOf? st.amountOf(i) : (st.money||0);
+      let show=amt;
+      if(st.offset) show=Math.max(0, amt - m.cnt[i]*st.offset.cover);
+      if(st.saveWaive && m.cnt[i]) show=0;
+      big = (show===0 && (st.offset||st.saveWaive)) ? '不用付' : money(show);
+      sub = st.subOf? st.subOf(i) : '';
+      if(st.offset && m.cnt[i]) sub=`已折抵 ${m.cnt[i]} 次（${fm(m.cnt[i]*st.offset.cover)}）`;
+      if(st.saveWaive && m.cnt[i]) sub=`用儲蓄 ${fm(st.saveWaive)} 換掉這個月的生活費`;
+      if(forced){ cls.push('forced'); big='記為欠款'; sub=`被迫負債 ＋${fm(forced)}`; }
+      else if(m.tick[i]) cls.push('done');
+      const mb=[];
+      if(st.offset) mb.push(`<button onclick="event.stopPropagation();bumpOffset(${i})">抵</button>`);
+      if(st.saveWaive) mb.push(`<button onclick="event.stopPropagation();bumpOffset(${i})">免</button>`);
+      if(st.allowDebt) mb.push(`<button class="red" onclick="event.stopPropagation();markForced(${i})">欠</button>`);
+      mini=mb.length?`<div class="mini">${mb.join('')}</div>`:'';
+    }
+    else if(st.mode==='units'){
+      const u=m.cnt[i], lo=m.loan[i];
+      if(u) cls.push('picked');
+      big = u? `${u} 單位` : '—';
+      const need=u*st.price;
+      sub = u? (`應收 ${fm(Math.max(0,need-lo))}` + (lo? `　（借款 ${fm(lo)}）`:'')) : '沒有要投就不用動';
+      mini=`<div class="mini">
+        <button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button>
+        <button class="gold" onclick="event.stopPropagation();bumpLoan(${i})">借</button></div>`;
+    }
+    else if(st.mode==='count'){
+      const u=m.cnt[i], amt=u*st.unitAmt;
+      if(u) cls.push('picked');
+      big = u? money(amt) : '—';
+      sub = u? `${u} 份 × ${fm(st.unitAmt)}${st.take?'（跟他收）':''}` : '沒有要做就不用動';
+      mini=`<div class="mini"><button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button></div>`;
+    }
+    else { /* check */
+      if(m.tick[i]) cls.push('done');
+      big = m.tick[i]? '已完成' : '點一下打勾';
+      sub = st.subOf? st.subOf(i) : '';
+    }
+    h+=`<div class="stu ${cls.join(' ')}">
+      <span class="tick">✓</span>
+      <div class="hit" onclick="tapStu(${i})"></div>
+      <div class="nm"><span class="idx">${LET[i]}</span>${nameOf(i)}
+        <button style="margin-left:auto;margin-right:24px;font-size:13px;color:var(--ink-soft);position:relative;z-index:2"
+          onclick="event.stopPropagation();openDrawer('stu',${i})">明細</button></div>
+      <div class="amt">${big}</div>
+      <div class="sub">${sub||''}</div>
+      <div class="led">${ledgerLine(i,r)}</div>
+      ${mini}
+    </div>`;
+  }
+  grid.innerHTML=h;
+}
+function ledgerLine(i,r){
+  const bits=[];
+  const a=assetOf(i); if(a) bits.push('投資 '+fm(a));
+  const p=passiveOf(i,r); if(p) bits.push('配息 '+fm(p)+'/月');
+  if(CS.loan[i]) bits.push(`<span class="lo">貸款 ${fm(CS.loan[i])}</span>`);
+  if(CS.debt[i]) bits.push(`<span class="bad">欠款 ${fm(CS.debt[i])}</span>`);
+  return bits.join('　');
+}
+function finalGrid(){
+  let h='';
+  const r=curRound();
+  for(let i=0;i<N();i++){
+    h+=`<div class="stu"><div class="nm"><span class="idx">${LET[i]}</span>${nameOf(i)}</div>
+      <div class="sub" style="font-size:15px;line-height:1.9;margin-top:8px">
+        投資總額　<b>${fm(assetOf(i))}</b><br>
+        每月配息　<b>${fm(passiveOf(i,r+1))}</b><br>
+        其他收入　<b>${fm(otherOf(i,r+1))}</b><br>
+        投資貸款　<b>${fm(CS.loan[i])}</b><br>
+        被迫負債　<b style="color:var(--brick)">${fm(CS.debt[i])}</b><br>
+        公益捐款　<b>${fm(CS.give[i])}</b></div></div>`;
+  }
+  return h;
+}
+function renderBar(){
+  const st=STEPS[CS.cur.i];
+  const last = CS.cur.i>=STEPS.length-1;
+  $('#bBack').disabled = CS.cur.i<=0;
+  const go=$('#bGo');
+  if(!st){ go.textContent='等待中'; go.className='go'; $('#bMid').textContent=''; return; }
+  const fin=allDone();
+  go.textContent = fin ? '已回報 ✓' : (last? '本桌完成 ✓' : '完成，下一步 →');
+  go.className = 'go' + (last?' fin':'') + (!fin && stepReady(st)?' ready':'');
+  $('#bMid').innerHTML = fin
+    ? '這桌都好了，等講師繼續'
+    : `${stepDoneCount(st)} ／ ${N()} 位處理好了`;
+}
+function stepDoneCount(st){
+  const m=markOf(st);
+  if(st.mode==='units'||st.mode==='count') return m.cnt.slice(0,N()).filter(x=>x>0).length;
+  return m.tick.slice(0,N()).filter((x,i)=>x||m.forced[i]).length;
+}
+function stepReady(st){
+  if(st.mode==='units'||st.mode==='count'||st.mode==='info') return true;
+  return stepDoneCount(st)>=N();
+}
+/* 「本桌完成」是組長按出來的，不會自己變成完成——主控側欄的數字才不會騙人 */
+function phaseKey(){ return CS.manual ? ('manual|'+CS.mRound+'|'+CS.mAct) : (ST? ST.round+'|'+ST.phase : ''); }
+function allDone(){ return !!phaseKey() && CS.finKey===phaseKey(); }
+
+/* =====================================================================
+   6. 操作
+===================================================================== */
+function tapStu(i){
+  const st=STEPS[CS.cur.i]; if(!st) return;
+  const m=markOf(st);
+  if(st.mode==='units'){ bumpUnit(i,1); return; }
+  if(st.mode==='count'){ bumpUnit(i,1); return; }
+  if(m.forced[i]){ m.forced[i]=0; }            /* 再點一下＝取消欠款，誤觸可救 */
+  else m.tick[i]=m.tick[i]?0:1;
+  saveCS(); render();
+}
+function bumpUnit(i,d){
+  const st=STEPS[CS.cur.i]; if(!st) return;
+  const m=markOf(st);
+  m.cnt[i]=Math.max(0,(m.cnt[i]||0)+d);
+  if(st.mode==='units' && m.cnt[i]*st.price < m.loan[i]) m.loan[i]=0;
+  saveCS(); commitStep(st); commitLoans(st); render();
+}
+/* 娛樂抵扣／儲蓄抵免：一直點會循環回 0，點錯不用怕 */
+function bumpOffset(i){
+  const st=STEPS[CS.cur.i]; if(!st) return;
+  const m=markOf(st);
+  const amt = st.amountOf? st.amountOf(i) : (st.money||0);
+  const max = st.saveWaive ? 1 : Math.max(1, Math.ceil(amt/st.offset.cover));
+  m.cnt[i]=((m.cnt[i]||0)+1) % (max+1);
+  saveCS(); render();
+}
+/* 借款上限＝（薪水＋其他收入＋被動收入）× 10。超過只提醒，不強制擋，
+   因為每位學員真正的收入以他自己桌上的紀錄為準，志工不必為了系統去查帳。 */
+function loanCapOf(i){
+  const r=curRound();
+  const act = (ST && !ST.jobless) ? (ST.income||0) + otherOf(i,r) : 0;   /* 失業月薪水和其他收入都停發 */
+  const inc = act + passiveOf(i,r);
+  return inc * (((ST&&ST.loan&&ST.loan.capX)||10));
+}
+function bumpLoan(i){
+  const st=STEPS[CS.cur.i]; if(!st || st.mode!=='units') return;
+  const m=markOf(st);
+  const need=(m.cnt[i]||0)*st.price;
+  if(!need){ toast('先點格子決定他要投幾單位'); return; }
+  const nx=(m.loan[i]||0)+loanUnit();
+  m.loan[i] = nx>need ? 0 : nx;               /* 借超過投資金額就歸零重來，誤觸可救 */
+  const cap=loanCapOf(i);
+  if(cap && CS.loan[i]-((m.applied&&m.applied[i])||0)+m.loan[i] > cap)
+    toast(`提醒：${nameOf(i)} 的借款上限約 ${fm(cap)}，請和他確認`);
+  saveCS(); commitStep(st); commitLoans(st); render();
+}
+function markForced(i){
+  const st=STEPS[CS.cur.i]; if(!st || !st.allowDebt) return;
+  const m=markOf(st);
+  const amt = st.amountOf? st.amountOf(i) : (st.money||0);
+  if(m.forced[i]) m.forced[i]=0; else { m.forced[i]=amt; m.tick[i]=0; }
+  saveCS(); commitForced(st); render();
+}
+/* 把這一步的結果寫進長期帳本（投資單位、貸款、知識變現、捐款） */
+function commitStep(st){
+  const m=markOf(st);
+  if(st.mode==='units'){
+    const h = CS.hold[st.cardId] || (CS.hold[st.cardId]={
+      title:st.title, price:st.price, cf:st.cf||0, buy:curRound(), units:z6(), st:null });
+    h.price=st.price; h.cf=st.cf||0;
+    for(let i=0;i<MAXSTU;i++) h.units[i]=m.cnt[i]||0;
+    if(!h.units.some(u=>u>0)) delete CS.hold[st.cardId];
+  }
+  if(st.mode==='count' && st.ledger){
+    for(let i=0;i<MAXSTU;i++) CS[st.ledger][i]=(m.cnt[i]||0)*st.unitAmt;
+  }
+  saveCS();
+}
+/* 貸款要在離開這一步時才真正入帳，中途加減不會重複累加 */
+function commitLoans(st){
+  if(!st || st.mode!=='units') return;
+  const m=markOf(st);
+  if(m.applied) { for(let i=0;i<MAXSTU;i++) CS.loan[i]-=m.applied[i]||0; }
+  m.applied=m.loan.slice();
+  for(let i=0;i<MAXSTU;i++) CS.loan[i]+=m.applied[i]||0;
+  saveCS();
+}
+function commitForced(st){
+  if(!st) return;
+  const m=markOf(st);
+  if(m.dapplied){ for(let i=0;i<MAXSTU;i++) CS.debt[i]-=m.dapplied[i]||0; }
+  m.dapplied=m.forced.slice();
+  for(let i=0;i<MAXSTU;i++) CS.debt[i]+=m.dapplied[i]||0;
+  saveCS();
+}
+function nextStep(){
+  const st=STEPS[CS.cur.i];
+  if(st){ commitStep(st); commitLoans(st); commitForced(st); }
+  if(CS.cur.i < STEPS.length-1){ CS.cur.i++; }
+  else if(!allDone()){ CS.finKey=phaseKey(); toast('本桌完成，已回報給講師'); }
+  saveCS(); render(); report();
+}
+function prevStep(){
+  if(CS.cur.i>0){ CS.cur.i--; saveCS(); render(); }
+}
+
+/* =====================================================================
+   7. 抽屜：學員明細／設定／手動模式
+===================================================================== */
+function openDrawer(kind,i){
+  const p=$('#dPanel');
+  if(kind==='stu') p.innerHTML=stuPanel(i);
+  else if(kind==='manual') p.innerHTML=manualPanel();
+  else p.innerHTML=setPanel();
+  $('#drawer').classList.add('open');
+}
+function closeDrawer(){ $('#drawer').classList.remove('open'); render(); }
+function stuPanel(i){
+  const r=curRound();
+  let holds='';
+  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0; if(!u) continue;
+    const state = h.st ? (h.st.dead?'已開牌・歸零':(stillHeld(h)?'已開牌・繼續持有':'已開牌・本金已退')) : '等開牌';
+    holds+=`<div class="drow"><div class="k">${h.title}<br>
+      <span style="font-size:12px;color:var(--ink-soft)">${u} 單位 × ${fm(h.price)}　${state}</span></div>
+      <div class="adj"><button onclick="adjHold('${k}',${i},-1)">−</button>
+      <button onclick="adjHold('${k}',${i},1)">＋</button></div></div>`;
+  }
+  if(!holds) holds='<div class="drow"><div class="k" style="color:var(--ink-soft)">還沒有任何投資</div></div>';
+  return `<button class="dx" onclick="closeDrawer()">✕</button>
+    <h3>${nameOf(i)}</h3>
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">數字點錯了可以在這裡改回來</div>
+    <div class="dsec">持 有 的 投 資</div>${holds}
+    <div class="dsec">收 入 與 負 債</div>
+    <div class="drow"><div class="k">每月投資配息（被動）</div><div class="v">${fm(passiveOf(i,r+1))}</div></div>
+    <div class="drow"><div class="k">每月其他收入（知識變現等）</div><div class="v">${fm(otherOf(i,r+1))}</div>
+      <div class="adj"><button onclick="adjNum('other',${i},-1000)">−</button>
+      <button onclick="adjNum('other',${i},1000)">＋</button></div></div>
+    <div class="drow"><div class="k">投資貸款（他自己開口借的）</div><div class="v" style="color:var(--gold-deep)">${fm(CS.loan[i])}</div>
+      <div class="adj"><button onclick="adjNum('loan',${i},-loanUnit())">−</button>
+      <button onclick="adjNum('loan',${i},loanUnit())">＋</button></div></div>
+    <div class="drow"><div class="k">被迫負債（繳不出錢欠的）</div><div class="v" style="color:var(--brick)">${fm(CS.debt[i])}</div>
+      <div class="adj"><button onclick="adjNum('debt',${i},-10000)">−</button>
+      <button onclick="adjNum('debt',${i},10000)">＋</button></div></div>
+    <div class="drow"><div class="k">公益累計捐款</div><div class="v">${fm(CS.give[i])}</div>
+      <div class="adj"><button onclick="adjNum('give',${i},-1000)">−</button>
+      <button onclick="adjNum('give',${i},1000)">＋</button></div></div>
+    <div class="dsec">每 月 應 付 利 息</div>
+    <div class="drow"><div class="k">欠款 ${fm(debtOf(i))} × 月息 ${Math.round(loanRate()*100)}%</div>
+      <div class="v">${fm(interestOf(i))}</div></div>`;
+}
+function adjHold(k,i,d){
+  const h=CS.hold[k]; if(!h) return;
+  h.units[i]=Math.max(0,(h.units[i]||0)+d);
+  if(!h.units.some(u=>u>0)) delete CS.hold[k];
+  saveCS(); openDrawer('stu',i);
+}
+function adjNum(key,i,d){
+  CS[key][i]=Math.max(0,(CS[key][i]||0)+d);
+  saveCS(); openDrawer('stu',i);
+}
+function setPanel(){
+  const link = (ST||CS.manual) ? '' :
+    '<div style="background:var(--brick-50);border:1.5px solid var(--brick);border-radius:10px;padding:12px;font-size:14px;line-height:1.6;margin-bottom:14px">還沒收到主控台的訊息。請講師在主控台連點左上角 Logo 三下，按「開啟連線」。</div>';
+  return `<button class="dx" onclick="closeDrawer()">✕</button>
+    <h3>設定</h3>
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">房號 ${CS.room}・第 ${CS.table} 桌・${CS.n} 位學員<br>
+      連線方式：${(TX&&TX.net&&TX.net())?'網路（跨裝置）'
+        :(ST?'同一台電腦的另一個分頁':'尚未連上')}</div>
+    ${link}
+    <button class="dbtn" onclick="openDrawer('manual')">切換月份／手動模式</button>
+    <button class="dbtn" onclick="closeDrawer();setTimeout(()=>{$('#setup').style.display='block';fillSetup();},80)">改桌號或學員姓名</button>
+    <div class="dsec">本 桌 總 覽</div>
+    <div style="margin-top:8px">${overviewHTML()}</div>
+    <div class="dsec">危 險 操 作</div>
+    <button class="dbtn red" onclick="wipe()">清空本桌帳本（重新開始）</button>`;
+}
+function overviewHTML(){
+  const r=curRound(); let h='';
+  for(let i=0;i<N();i++){
+    h+=`<div class="drow"><div class="k">${nameOf(i)}<br>
+      <span style="font-size:12px;color:var(--ink-soft)">投資 ${fm(assetOf(i))}　配息 ${fm(passiveOf(i,r+1))}/月</span></div>
+      <div class="v" style="font-size:15px">${CS.debt[i]?`<span style="color:var(--brick)">欠 ${fm(CS.debt[i])}</span>`:''}
+        ${CS.loan[i]?`<span style="color:var(--gold-deep)">貸 ${fm(CS.loan[i])}</span>`:''}</div></div>`;
+  }
+  return h;
+}
+function manualPanel(){
+  let mon='';
+  for(let i=1;i<=12;i++) mon+=`<button class="${CS.mRound===i?'on':''}" onclick="setManualRound(${i})">${i}</button>`;
+  const acts=[['salary','發薪水'],['expense','收生活費'],['invest','投資機會'],['check','逐人確認']];
+  let ab='';
+  acts.forEach(([k,t])=>ab+=`<button class="dbtn ${CS.mAct===k?'':''}" style="${CS.mAct===k?'border-color:var(--green);color:var(--green-900)':''}" onclick="setManualAct('${k}')">${t}</button>`);
+  return `<button class="dx" onclick="closeDrawer()">✕</button>
+    <h3>手動模式</h3>
+    <div style="font-size:14px;color:var(--ink-soft);line-height:1.65;margin-bottom:14px">
+      連不上主控台時用這個。先選現在是第幾月，再選這一步要做什麼；帳本照樣會記。
+      主控台恢復連線後會自動切回自動模式。</div>
+    <div class="dsec">現 在 是 第 幾 月</div>
+    <div class="pick" style="margin-top:10px">${mon}</div>
+    <div class="dsec">這 一 步 要 做 什 麼</div>${ab}
+    ${ST?'<button class="dbtn" style="margin-top:18px" onclick="backAuto()">回到自動模式（跟著講師走）</button>':''}`;
+}
+function setManualRound(i){ CS.mRound=i; CS.manual=true; saveCS(); openDrawer('manual'); }
+function setManualAct(k){ CS.mAct=k; CS.manual=true; CS.cur.i=0; saveCS(); closeDrawer(); render(); }
+function backAuto(){ CS.manual=false; CS.mAct=''; saveCS(); closeDrawer(); render(); }
+function wipe(){
+  if(!confirm('確定要清空這一桌的所有紀錄？投資、貸款、捐款都會不見。')) return;
+  if(!confirm('再確認一次：清空之後沒辦法復原。')) return;
+  const keep={room:CS.room,table:CS.table,n:CS.n,names:CS.names};
+  CS=Object.assign(newLedger(),keep); saveCS(); closeDrawer(); render(); toast('已清空');
+}
+
+/* =====================================================================
+   8. 開場設定
+===================================================================== */
+let SU={ table:0, n:0 };
+function fillSetup(){
+  const pt=$('#pkTable'); pt.innerHTML='';
+  for(let i=1;i<=5;i++){
+    const b=document.createElement('button');
+    b.textContent='第 '+i+' 桌'; b.className=(SU.table===i?'on':'');
+    b.onclick=()=>{ SU.table=i; fillSetup(); };
+    pt.appendChild(b);
+  }
+  const pn=$('#pkNum'); pn.innerHTML='';
+  for(let i=1;i<=MAXSTU;i++){
+    const b=document.createElement('button');
+    b.textContent=i+' 位'; b.className=(SU.n===i?'on':'');
+    b.onclick=()=>{ SU.n=i; fillSetup(); };
+    pn.appendChild(b);
+  }
+  const nb=$('#nmBox'); nb.innerHTML='';
+  for(let i=0;i<SU.n;i++){
+    const inp=document.createElement('input');
+    inp.placeholder='學員 '+LET[i]+'（可不填）';
+    inp.value=(CS&&CS.names[i])||''; inp.dataset.i=i; inp.maxLength=8;
+    nb.appendChild(inp);
+  }
+  $('#goBtn').disabled = !(SU.table && SU.n);
+}
+function startConsole(){
+  if(!SU.table || !SU.n) return;
+  const room=($('#inRoom').value||'VISION').trim().toUpperCase() || 'VISION';
+  if(!CS) CS=newLedger();
+  CS.room=room; CS.table=SU.table; CS.n=SU.n;
+  document.querySelectorAll('#nmBox input').forEach(inp=>{ CS.names[+inp.dataset.i]=inp.value.trim(); });
+  saveCS();
+  $('#setup').style.display='none';
+  document.body.classList.add('ready');
+  connect(); render();
+}
+
+/* =====================================================================
+   9. 啟動
+===================================================================== */
+(function init(){
+  CS=loadCS();
+  if(CS && CS.table){
+    SU={table:CS.table, n:CS.n};
+    $('#inRoom').value=CS.room;
+    $('#setup').style.display='none';
+    document.body.classList.add('ready');
+    connect(); render();
+  }else{
+    CS=CS||newLedger();
+    SU={table:0, n:0};
+    fillSetup();
+  }
+  /* 分頁被切走再切回來（志工看別的東西又回來）→ 立刻跟主控要一份最新狀態 */
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden && TX){ hello(); checkLink(); }
+  });
+})();
+</script>
+</body>
+</html>
