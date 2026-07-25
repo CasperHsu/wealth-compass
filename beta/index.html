@@ -754,7 +754,7 @@ const DEF = {
   charityMonth:7, charityUnit:1000,                  /* 公益：每 1,000 為單位自由捐贈 */
   accidentMonth:9, accidentCost:300000, charityCover:100000, /* 重大事故 30 萬；每捐 1,000 保留 10 萬 */
   reallocA:4, reallocB:8, unlockFee:1000,            /* 預算重分配：第 4、8 月；首次學費 1,000 */
-  loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝月現金流 10 倍 */
+  loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝月總收入 10 倍 */
   timeBudgetMin:90,
   mvUrl:''
 };
@@ -1347,7 +1347,13 @@ function dCashflow(){
   const act = isJobless(S.round)?0:(x.income+x.extra);
   return act + x.passive - curExpense() - Math.round(x.loan*S.cfg.loanRate);
 }
-function loanCap(){ return Math.max(0,dCashflow())*S.cfg.loanCapX; }
+/* 借款上限＝月總收入（主動＋其他＋被動）×10。看總收入而不是扣完支出的淨現金流，
+   學員才有空間借錢去投資；失業月主動與其他收入停發，上限自然縮到只剩被動收入 ×10。 */
+function loanCap(){
+  const x=d();
+  const act = isJobless(S.round)?0:(x.income+x.extra);
+  return (act + x.passive) * S.cfg.loanCapX;
+}
 function dLog(msg,cls){
   d().log.unshift({m:S.round, t:msg, c:cls||''});
   if(d().log.length>80) d().log.pop();
@@ -1377,7 +1383,7 @@ function payChain(amt,label,borrow){
     const change=borrowAmt-need;
     if(change>0){ x.acc.life+=change; x.ain.life+=change; }
     dLog(`${label}不足 → 銀行借款 ${fm(borrowAmt)}（${units} 個 1 萬單位，月息 ${Math.round(S.cfg.loanRate*100)}%）`,'warn');
-    if(over) dLog(`⚠ 負債 ${fm(x.loan)} 已超過借款上限（月現金流 ×${S.cfg.loanCapX}＝${fm(loanCap())}）`,'warn');
+    if(over) dLog(`⚠ 負債 ${fm(x.loan)} 已超過借款上限（月總收入 ×${S.cfg.loanCapX}＝${fm(loanCap())}）`,'warn');
     need=0;
   }
   return 0;
@@ -1997,7 +2003,7 @@ function rulesHTML(i){
         </div>
         <p style="font-size:13px;color:var(--ink-mute);margin-top:8px">＊以上為帳戶分類舉例，還有其他可能性——可依自己的狀況調整。</p></div>
       <div class="rbox full"><h5><span class="ic">🏦</span>銀行借貸</h5>
-        <p>每 <b class="hl">1 萬</b>為單位、<b class="hl">月息 10%</b>（利息計入每月生活支出）；借款總額<b>不得超過每月現金流的 ${cfg.loanCapX} 倍</b>。</p></div>
+        <p>每 <b class="hl">1 萬</b>為單位、<b class="hl">月息 10%</b>（利息計入每月生活支出）；借款總額<b>不得超過每月總收入的 ${cfg.loanCapX} 倍</b>。</p></div>
     </div>
     ${nav('rulesNav(0)','closeOverlay()')}
   </div>`;
@@ -2307,7 +2313,7 @@ const SETTINGS=[
   ['settleAfter','投資開牌間隔(月)'],['stressCost','壓力事件消費額'],['joblessSaveCost','失業月儲蓄抵扣額'],
   ['accidentCost','重大事故金額'],['charityCover','每捐1000保留額'],['marryExtra','結婚生子月增額'],
   ['funPer','娛樂抵扣單位'],['funCover','娛樂每單位抵銷額'],['unlockFee','重分配首次學習費'],
-  ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(現金流倍數)'],
+  ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(月收入倍數)'],
   ['timeBudgetMin','課堂時間預算(分)']
 ];
 function openSettings(){
@@ -2659,7 +2665,7 @@ function renderSide(){
     ${pendList.map(p=>`<div class="notice gold"><span class="ic">🚀</span><span>「${CAT[p.id].title}」<b>第 ${p.due} 月開牌</b></span></div>`).join('')}
     ${d().on&&d().donated>0?`<div class="notice gold"><span class="ic">💝</span><span>示範學員累計捐贈 <b class="num">${fm(d().donated)}</b>（重大事故可保 ${fm(Math.floor(d().donated/cfg.charityUnit)*cfg.charityCover)}）</span></div>`:''}
     ${S.coop?`<div class="notice gold"><span class="ic">🤝</span><span><b>合作解鎖</b>：可合資湊單位，出資比例分成果。</span></div>`:''}
-    <div class="notice"><span class="ic">🏦</span><span><b>借貸</b>：每 1 萬為單位、月息 ${Math.round(cfg.loanRate*100)}%（計入生活支出）；上限＝月現金流 ×${cfg.loanCapX}。</span></div>`;
+    <div class="notice"><span class="ic">🏦</span><span><b>借貸</b>：每 1 萬為單位、月息 ${Math.round(cfg.loanRate*100)}%（計入生活支出）；上限＝月總收入 ×${cfg.loanCapX}。</span></div>`;
 }
 function renderControls(){
   const cfg=S.cfg;

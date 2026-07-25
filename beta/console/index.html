@@ -948,7 +948,8 @@ function bumpOffset(i){
    因為每位學員真正的收入以他自己桌上的紀錄為準，志工不必為了系統去查帳。 */
 function loanCapOf(i){
   const r=curRound();
-  const inc = (ST&&!ST.jobless ? (ST.income||0) : 0) + otherOf(i,r) + passiveOf(i,r);
+  const act = (ST && !ST.jobless) ? (ST.income||0) + otherOf(i,r) : 0;   /* 失業月薪水和其他收入都停發 */
+  const inc = act + passiveOf(i,r);
   return inc * (((ST&&ST.loan&&ST.loan.capX)||10));
 }
 function bumpLoan(i){
