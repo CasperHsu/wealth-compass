@@ -191,19 +191,33 @@ body.ready.disconnected #app{padding-top:118px}
 .dbtn.red{border-color:var(--brick);color:var(--brick)}
 .adot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
 
-/* 分配比例拉桿 */
+/* 分配比例：直接打數字（拉桿在平板上拉不準，2026-07-26 改掉） */
 .alloc{margin-top:12px}
-.alrow{display:flex;align-items:center;gap:9px;margin-bottom:2px}
-.alrow .an{width:74px;flex:none;font-size:15px;font-weight:700}
-.alrow input[type=range]{flex:1;accent-color:var(--green);height:38px;min-width:0}
-.alrow .ap{width:44px;flex:none;text-align:right;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
-.alrow .am{width:62px;flex:none;text-align:right;font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.alrow{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.alrow .an{width:66px;flex:none;font-size:15px;font-weight:700}
+.alrow .ain{width:92px;flex:none;height:50px;border-radius:10px;border:1.5px solid var(--line-2);
+  background:#fff;font-size:21px;font-weight:800;text-align:center;color:var(--ink);
+  font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.alrow .ain:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(74,124,89,.16)}
+.alrow .ain::-webkit-outer-spin-button,
+.alrow .ain::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.alrow .pc{flex:none;font-size:15px;font-weight:700;color:var(--ink-soft)}
+.alrow .am{flex:1;min-width:0;text-align:right;font-size:14px;color:var(--ink-soft);
+  font-variant-numeric:tabular-nums}
+.ahint{font-size:13px;color:var(--ink-soft);line-height:1.6;margin-bottom:14px}
 .arest{font-size:13px;color:var(--ink-soft);line-height:1.55;margin-top:8px;padding:9px 11px;
   background:var(--cream);border-radius:9px}
 .arest.over{color:var(--brick);font-weight:700;background:var(--brick-50)}
 .apre{display:flex;gap:9px;margin-top:12px}
 .apre button{flex:1;height:48px;border-radius:10px;border:1.5px solid var(--line-2);background:#fff;
   font-size:14px;font-weight:700;color:var(--ink-soft)}
+/* 「一開始就打錯了」修正模式 */
+.afix{margin-top:14px;padding:11px 12px;border-radius:10px;border:1.5px dashed var(--line-2);
+  font-size:13px;line-height:1.65;color:var(--ink-soft)}
+.afix b{color:var(--ink)}
+.afix.on{border-style:solid;border-color:#97742A;background:var(--gold-50)}
+.afix button{margin-top:9px;width:100%;height:46px;border-radius:9px;border:1.5px solid #97742A;
+  background:#fff;font-size:14px;font-weight:700;color:#97742A}
 
 /* 這一局的歷程 */
 .hist{margin-top:8px;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
@@ -249,7 +263,13 @@ body.ready.disconnected #app{padding-top:118px}
     <div class="names" id="nmBox" style="margin-top:14px"></div>
   </div>
 
-  <button class="gobtn" id="goBtn" onclick="startConsole()">開始</button>
+  <div class="step">
+    <h3>④ 每個人的分配比例</h3>
+    <p>按下面的按鈕之後，畫面會一位一位問「你的收入要怎麼分帳戶？」，把學員說的百分比直接打進去就好。
+      <b>不分帳戶、只分兩三個都可以——不要建議他該怎麼分。</b></p>
+  </div>
+
+  <button class="gobtn" id="goBtn" onclick="startConsole()">開始，先問分配比例</button>
 </div></div>
 
 <!-- ══════════════ 主畫面 ══════════════ -->
@@ -502,7 +522,7 @@ function funCover(){ return (ST&&ST.fun&&ST.fun.cover)||10000; }
 function curRound(){ return CS.manual ? CS.mRound : ((ST&&ST.round)||0); }
 
 /* ---------------------------------------------------------------------
-   分配比例：key＝「從第幾月開始生效」。第 1 月在分配那一步設定；
+   分配比例：key＝「從第幾月開始生效」。開場（或第 1 月）設定的寫進 alloc[1]；
    第 4、8 月的重分配窗口設定的比例，從下個月才生效（寫進 r+1）。
 --------------------------------------------------------------------- */
 function allocOf(i,r){
@@ -510,6 +530,16 @@ function allocOf(i,r){
   return zAcc();                                   /* 從沒設定過＝月光族，全部 0 */
 }
 function allocIsSet(i,r){ const a=CS.alloc[r]; return !!(a && a[i]); }
+/* 問過了沒？（選「不分帳戶」也算問過，六格全 0 不能當成沒問） */
+function allocKnown(i,r){
+  for(let m=Math.max(1,r);m>=1;m--){ const a=CS.alloc[m]; if(a && a[i]) return true; }
+  return false;
+}
+/* 這一位在第 r 月之後，自己還有沒有另外調過比例 */
+function allocLaterThan(i,r){
+  for(let m=r+1;m<=12;m++){ const a=CS.alloc[m]; if(a && a[i]) return m; }
+  return 0;
+}
 function allocSum(a){ return ACCS.reduce((s,k)=>s+(a[k]||0),0); }
 function allocCount(a){ return ACCS.filter(k=>(a[k]||0)>0).length; }
 function setAllocAt(i,r,obj){
@@ -905,7 +935,8 @@ function phFixed(X,r,f,fx,nm){
 ===================================================================== */
 function buildSteps(){
   if(CS.manual) return manualSteps();
-  if(!ST || !ST.started) return [];
+  /* 講師還沒開始 → 這段時間拿來把每個人的分配比例問完（命名之後的第一件事） */
+  if(!ST || !ST.started) return [setupAllocStep()];
   const r=ST.round, out=[];
   if(ST.round>ST.rounds) return [{ id:'final', mode:'info', badge:'結束',
     title:'12 個月跑完了', note:'下面已經幫每一位算好淨資產與每月淨現金流，直接唸給他們對。'
@@ -914,11 +945,12 @@ function buildSteps(){
 
   switch(ST.phase){
     case 'salary': {
+      /* 分配比例排在發薪前面（2026-07-26 改）：先確認這個月的錢會怎麼分，
+         發錢時就能直接照帳戶把籌碼一次發對，不用發完再退回來重擺。
+         主控台沒有獨立的「分配」階段，錢一律在講師推進到下一階段時才真正入帳。 */
+      out.push(allocStep(r));
       out.push(salaryStep(r));
       (ST.settle||[]).forEach(s=>out.push(settleStep(s,r)));
-      /* 主控台沒有獨立的「分配」階段（發薪後直接進翻牌），所以分配掛在發薪之後。
-         錢會在講師推進到下一階段時才真正入帳，跟主控台 mainAction() 的時機一致。 */
-      out.push(allocStep(r));
       break;
     }
     case 'allocate':
@@ -946,22 +978,30 @@ function buildSteps(){
   return out;
 }
 
-/* 分配收入。第 1 月要逐人問比例；之後的月份只顯示「這筆錢會怎麼分」讓組長對籌碼。 */
+/* 開場：講師還沒按開始的這段空檔，把每一位的分配比例問完 */
+function setupAllocStep(){
+  return { id:'alloc0', mode:'alloc', allocFor:1, badge:'開場', tone:'',
+    title:'先問每一位：你的收入要怎麼分帳戶？',
+    note:'點學員的格子，把他自己說的百分比直接打進去。他說不分帳戶、只分兩三個，都照他說的記——'
+        +'這是他的決定，你只負責記下來。問完就等講師開始，之後畫面會自己跟著主控台走。',
+    why:'比例先問好，第一次發薪就能直接照帳戶把籌碼分對，不用當場停下來算。' };
+}
+/* 分配收入。排在發薪前面：先看這個月的錢會怎麼分，再照著發。 */
 function allocStep(r){
   const anySet = [0,1,2,3,4,5].some(i=>i<N() && allocSum(allocOf(i,r))>0);
-  const first  = !CS.alloc[1];
+  const first  = ![0,1,2,3,4,5].some(i=>i<N() && allocKnown(i,r));
   if(first){
-    return { id:'alloc', mode:'alloc', badge:'設定', tone:'',
-      title:'問每一位：這筆錢你要怎麼分帳戶？',
-      note:'點學員的格子，照他自己說的比例調整。他說不分、或只分兩三個帳戶，都照他說的做——'
+    return { id:'alloc', mode:'alloc', badge:'先設定', tone:'',
+      title:'還沒問過比例——先問每一位：你的錢要怎麼分帳戶？',
+      note:'點學員的格子，把他說的百分比打進去。他說不分、或只分兩三個帳戶，都照他說的做——'
           +'這是他自己的決定，你只負責記下來。設定過的人格子會變綠色。',
       why:'先分配再花錢，是六個帳戶的核心習慣。分幾個、怎麼分，答案要由他自己承擔。' };
   }
-  return { id:'alloc', mode:'alloc', badge:'對一下', tone:'',
-    title:'學員把這個月的收入分到各帳戶',
-    note:'每一格已經照他設定的比例算好了，幫他對一下桌上的籌碼有沒有擺對。'
+  return { id:'alloc', mode:'alloc', badge:'先看', tone:'',
+    title:'這個月的錢，每個人會這樣分',
+    note:'每一格已經照他設定的比例算好了。等一下發錢的時候，直接照這些數字把籌碼分進帳戶。'
         +(anySet?'':'　這桌目前沒有人分帳戶，錢全部放身上。')
-        +'　要改比例點他的格子。',
+        +'　比例要改、或一開始記錯了，點他的格子。',
     why:'錢一進來就先分流，剩下的才是能花的。' };
 }
 function salaryStep(r){
@@ -1248,7 +1288,7 @@ function renderGrid(st){
     }
     else if(st.mode==='alloc'){
       const tr = st.allocFor || r;
-      const al = allocOf(i,tr), set = allocIsSet(i,tr) || (tr>1 && allocSum(al)>0);
+      const al = allocOf(i,tr), set = allocKnown(i,tr);
       const inc = (E&&E.incTot[i])||0;
       if(set) cls.push('done');
       const cnt = allocCount(al);
@@ -1344,6 +1384,14 @@ function renderBar(){
   $('#bBack').disabled = CS.cur.i<=0;
   const go=$('#bGo');
   if(!st){ go.textContent='等待中'; go.className='go'; $('#bMid').textContent=''; return; }
+  if(st.id==='alloc0'){                       /* 開場問比例：按鈕＝跳到下一個還沒問的人 */
+    const c=stepDoneCount(st), all=c>=N();
+    go.textContent = all ? '等講師開始' : '問分配比例 →';
+    go.className = 'go' + (all?'':' ready');
+    $('#bMid').innerHTML = all ? '比例都問好了，等講師開始第 1 月'
+                               : `${c} ／ ${N()} 位問好比例了`;
+    return;
+  }
   const fin=allDone();
   go.textContent = fin ? '已回報 ✓' : (last? '本桌完成 ✓' : '完成，下一步 →');
   go.className = 'go' + (last?' fin':'') + (!fin && stepReady(st)?' ready':'');
@@ -1356,7 +1404,7 @@ function stepDoneCount(st){
   if(st.mode==='units'||st.mode==='count') return m.cnt.slice(0,N()).filter(x=>x>0).length;
   if(st.mode==='alloc'){
     const tr=st.allocFor||curRound(); let c=0;
-    for(let i=0;i<N();i++) if(allocIsSet(i,tr) || (tr>1 && allocSum(allocOf(i,tr))>0)) c++;
+    for(let i=0;i<N();i++) if(allocKnown(i,tr)) c++;
     return c;
   }
   return m.tick.slice(0,N()).filter(x=>x).length;
@@ -1439,6 +1487,11 @@ function bumpLoan(i){
   saveCS(); render();
 }
 function nextStep(){
+  const st0=STEPS[CS.cur.i];
+  if(st0 && st0.id==='alloc0'){
+    for(let i=0;i<N();i++) if(!allocKnown(i,1)){ openDrawer('alloc',i); return; }
+    toast('都問完了，等講師開始第 1 月'); return;
+  }
   if(CS.cur.i < STEPS.length-1){ CS.cur.i++; }
   else if(!allDone()){ CS.finKey=phaseKey(); toast('本桌完成，已回報給講師'); }
   saveCS(); render(); report();
@@ -1452,63 +1505,109 @@ function prevStep(){
 ===================================================================== */
 function openDrawer(kind,i){
   const p=$('#dPanel');
+  if(kind!=='alloc' || i!==ALLOCI) ALLOCAT=null;      /* 換人／換面板就退出修正模式 */
+  ALLOCI = (kind==='alloc') ? i : -1;
   if(kind==='stu') p.innerHTML=stuPanel(i);
   else if(kind==='alloc') p.innerHTML=allocPanel(i);
   else if(kind==='manual') p.innerHTML=manualPanel();
   else p.innerHTML=setPanel();
   $('#drawer').classList.add('open');
 }
-/* 分配比例：六條拉桿。刻意不寫任何「應該分幾個」的建議——
+/* 分配比例：六格直接打數字。刻意不寫任何「應該分幾個」的建議——
    分不分、分幾個，是學員自己的決定，也是第 2 月無意識消費要教的東西。 */
-function allocTarget(){
-  const st=STEPS[CS.cur.i];
-  if(st && st.mode==='alloc') return st.allocFor || curRound() || 1;
-  return Math.max(1,curRound());
+let ALLOCAT=null;      /* 修正模式：把生效月份鎖回第 1 月（志工一開始就打錯的情況） */
+let ALLOCI=-1;         /* 現在打開的是哪一位，換人就自動退出修正模式 */
+function allocNatural(){
+  const st=STEPS[CS.cur.i], tot=(ST&&ST.rounds)||12;
+  const r=Math.min(Math.max(1,curRound()), tot);      /* 遊戲跑完了就別再寫到第 13 月 */
+  if(st && st.mode==='alloc') return st.allocFor || r;
+  return r;
+}
+function allocTarget(){ return ALLOCAT || allocNatural(); }
+function amtOf(inc,p){ return (inc>0 && p>0) ? fm(Math.floor(inc*p/100)) : ''; }
+function restLine(al,inc){
+  const sum=allocSum(al);
+  if(sum>100) return `超過 100% 了（多了 ${sum-100}%），請改回來`;
+  if(sum===100) return '100% 都分完了，身上不留現金';
+  const cash = inc>0 ? `（${fm(inc-ACCS.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}）` : '';
+  return `沒分配到的 ${100-sum}% 會直接放在他身上當現金${cash}`;
 }
 function allocPanel(i){
-  const tr=allocTarget();
+  const tr=allocTarget(), nat=allocNatural(), fixing=(ALLOCAT===1 && nat>1);
   const al=Object.assign(zAcc(), allocOf(i,tr));
-  const sum=allocSum(al);
   const inc=(E&&E.incTot[i])||0;
   const rows=ACCS.map(k=>`
     <div class="alrow">
       <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i>${ANAME[k]}</span>
-      <input type="range" min="0" max="100" step="5" value="${al[k]}"
-        oninput="setAllocK(${i},'${k}',this.value)">
-      <span class="ap">${al[k]}%</span>
-      <span class="am">${inc>0&&al[k]>0?fm(Math.floor(inc*al[k]/100)):''}</span>
+      <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
+        min="0" max="100" value="${al[k]||''}" placeholder="0"
+        onfocus="this.select()" oninput="setAllocK(${i},'${k}',this.value)">
+      <span class="pc">%</span>
+      <span class="am" id="am-${k}">${amtOf(inc,al[k])}</span>
     </div>`).join('');
+  const later = fixing ? allocLaterThan(i,1) : 0;
+  const fix = nat>1 ? `
+    <div class="afix ${fixing?'on':''}">
+      ${fixing
+        ? `<b>修正模式：改的是第 1 月的比例</b><br>
+           按完之後第 1 月到現在<b>每一個月都會用新比例重算一次</b>，
+           帳戶餘額、生活費、投資上限都會自己更新。桌上的籌碼請照新的數字重擺。
+           ${later?`<br>注意：他在第 ${later} 月自己調過一次比例，那次的調整會保留。`:''}
+           <button onclick="allocFix(${i},0)">不用了，改回「從第 ${nat} 月起生效」</button>`
+        : `一開始就記錯了嗎？<br>現在改的是<b>從第 ${nat} 月起生效</b>（學員自己想換比例）。
+           如果是你一開始打錯、前面幾個月都算錯了——
+           <button onclick="allocFix(${i},1)">是我一開始打錯，回第 1 月改並全部重算</button>`}
+    </div>` : '';
   const nx=(i+1<N())?i+1:-1;
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>${nameOf(i)}　的分配比例</h3>
-    <div style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin-bottom:14px">
-      照學員自己說的調。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
-      ${tr>1?`這次調整從第 ${tr} 月開始生效。`:'第 1 月起生效。'}</div>
+    <div class="ahint">
+      把他自己說的數字直接打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
+      ${tr>1?`這次設定<b>從第 ${tr} 月開始生效</b>。`:'第 1 月起生效，之後每個月都照這個比例。'}</div>
     <div class="alloc">${rows}
-      <div class="arest ${sum>100?'over':''}">
-        ${sum>100 ? `超過 100% 了（多了 ${sum-100}%），請調回`
-          : sum===100 ? '100% 都分完了，身上不留現金'
-          : `沒分配到的 ${100-sum}% 會直接放在他身上當現金${inc>0?`（${fm(inc-ACCS.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}）`:''}`}</div>
+      <div class="arest ${allocSum(al)>100?'over':''}" id="arest">${restLine(al,inc)}</div>
     </div>
     <div class="apre">
       <button onclick="setPreset(${i},'ml')">他說不分帳戶</button>
       <button onclick="setPreset(${i},'std')">標準六帳戶</button>
     </div>
+    ${fix}
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
       onclick="${nx>=0?`openDrawer('alloc',${nx})`:'closeDrawer()'}">
       ${nx>=0?'記好了，問下一位 →':'記好了，回主畫面'}</button>`;
 }
+/* 打字時只更新右邊的金額和最下面那行，不重畫輸入框——不然游標會跳掉 */
+function paintAlloc(i){
+  const al=Object.assign(zAcc(), allocOf(i,allocTarget()));
+  const inc=(E&&E.incTot[i])||0;
+  ACCS.forEach(k=>{ const el=$('#am-'+k); if(el) el.textContent=amtOf(inc,al[k]); });
+  const r=$('#arest');
+  if(r){ r.className='arest'+(allocSum(al)>100?' over':''); r.innerHTML=restLine(al,inc); }
+}
 function setAllocK(i,k,v){
   const tr=allocTarget();
   const al=Object.assign(zAcc(), allocOf(i,tr));
-  al[k]=Math.max(0,Math.min(100,parseInt(v)||0));
-  setAllocAt(i,tr,al); render(); openDrawer('alloc',i);
+  /* 六格加起來不能超過 100%——超過就當場壓回可用的上限，不然引擎會分出負數現金 */
+  const left=Math.max(0, 100-(allocSum(al)-(al[k]||0)));
+  const raw=parseInt(v,10)||0, val=Math.max(0,Math.min(left,raw));
+  if(raw!==val){
+    const el=$('#ain-'+k); if(el) el.value=val;
+    toast(`六個帳戶加起來不能超過 100%，${ANAME[k]}最多只能填 ${left}%`);
+  }
+  al[k]=val;
+  setAllocAt(i,tr,al); render(); paintAlloc(i);
 }
 function setPreset(i,p){
   setAllocAt(i,allocTarget(),Object.assign({},PRESET[p]));
   render(); openDrawer('alloc',i);
 }
-function closeDrawer(){ $('#drawer').classList.remove('open'); render(); }
+/* 一開始就打錯 → 回第 1 月改。改完 recompute() 會自動把每一個月重跑一次。 */
+function allocFix(i,on){
+  ALLOCAT = on ? 1 : null;
+  render(); openDrawer('alloc',i);
+  if(on) toast('現在改的是第 1 月的比例，前面每個月都會跟著重算');
+}
+function closeDrawer(){ ALLOCAT=null; ALLOCI=-1; $('#drawer').classList.remove('open'); render(); }
 function stuPanel(i){
   const r=curRound();
   let holds='';
@@ -1684,6 +1783,10 @@ function startConsole(){
   $('#setup').style.display='none';
   document.body.classList.add('ready');
   connect(); render();
+  /* 命名完就一位一位問分配比例——這是開場設定的最後一步 */
+  let need=-1;
+  for(let i=0;i<CS.n;i++) if(!allocKnown(i,1)){ need=i; break; }
+  if(need>=0) setTimeout(()=>openDrawer('alloc',need), 80);
 }
 
 /* =====================================================================
