@@ -116,7 +116,8 @@ body.ready.disconnected #app{padding-top:118px}
   font-size:13px;font-weight:700;display:grid;place-items:center;flex:none}
 .stu .amt{font-size:clamp(29px,3.3vw,38px);font-weight:800;font-variant-numeric:tabular-nums;
   line-height:1.15;margin-top:6px;white-space:nowrap}
-.stu .sub{font-size:13px;color:var(--ink-soft);line-height:1.5;margin-top:2px}
+.stu .sub{font-size:13px;color:var(--ink-soft);line-height:1.5;margin-top:2px;
+  overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 /* 右下角有小按鈕（抵／免／欠／−／借）時要留位置，帳本那行不能被蓋住 */
 .stu .led{margin-top:auto;padding-top:7px;border-top:1px solid var(--line);
   font-size:12px;color:var(--ink-soft);line-height:1.5;min-height:19px;padding-right:96px}
@@ -188,6 +189,32 @@ body.ready.disconnected #app{padding-top:118px}
 .dbtn{width:100%;height:54px;border-radius:11px;border:2px solid var(--line-2);background:#fff;
   font-size:16px;font-weight:700;color:var(--ink);margin-top:10px}
 .dbtn.red{border-color:var(--brick);color:var(--brick)}
+.adot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
+
+/* 分配比例拉桿 */
+.alloc{margin-top:12px}
+.alrow{display:flex;align-items:center;gap:9px;margin-bottom:2px}
+.alrow .an{width:74px;flex:none;font-size:15px;font-weight:700}
+.alrow input[type=range]{flex:1;accent-color:var(--green);height:38px;min-width:0}
+.alrow .ap{width:44px;flex:none;text-align:right;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.alrow .am{width:62px;flex:none;text-align:right;font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.arest{font-size:13px;color:var(--ink-soft);line-height:1.55;margin-top:8px;padding:9px 11px;
+  background:var(--cream);border-radius:9px}
+.arest.over{color:var(--brick);font-weight:700;background:var(--brick-50)}
+.apre{display:flex;gap:9px;margin-top:12px}
+.apre button{flex:1;height:48px;border-radius:10px;border:1.5px solid var(--line-2);background:#fff;
+  font-size:14px;font-weight:700;color:var(--ink-soft)}
+
+/* 這一局的歷程 */
+.hist{margin-top:8px;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+.hrow{font-size:13px;line-height:1.55;padding:8px 11px;border-bottom:1px solid var(--line);color:var(--ink)}
+.hrow:last-child{border-bottom:none}
+.hrow .hm{display:inline-block;min-width:34px;color:var(--ink-soft);font-weight:700;font-variant-numeric:tabular-nums}
+.hrow.good{background:#F2F8F2}
+.hrow.bad{background:var(--brick-50);color:var(--brick-900)}
+.hrow.inv{background:var(--gold-50)}
+.hrow.warn{color:var(--gold-deep)}
+.hrow.fix{background:#F4F1FA}
 
 /* 提示訊息 */
 #toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%) translateY(14px);z-index:70;
@@ -271,27 +298,42 @@ function toast(msg){
 /* =====================================================================
    1. 本桌帳本（存在這台裝置自己的 localStorage，斷線也不會丟）
    ---------------------------------------------------------------------
-   hold  ：這桌買過的投資。key＝卡片代號，units[i]＝第 i 位學員買了幾單位
-   loan  ：投資貸款（學員主動開口借的，好債）
-   debt  ：被迫負債（繳不出錢自動產生的，壞債，紅字）
-   other ：知識變現換來的每月固定收入
-   give  ：公益勸募的累計捐款（第 9 月重大事故要用來算保留額）
-   marks ：每一個步驟的打勾與點數，key＝「月|階段|步驟代號」
+   ★ v2 起改成「純重播模擬器」：帳本只存**事實與決定**，不存任何餘額。
+     每次畫面更新都從第 1 月依序重算一次，所以
+       ・按「上一步」、在明細裡改任何數字 → 後面所有月份自動跟著對
+       ・不可能發生重複扣款、或漏扣
+   ---------------------------------------------------------------------
+   alloc  ：每位學員的收入分配比例。key＝生效月份，value＝六人的比例物件（沒設定＝null）
+   mlog   ：主控台每個月廣播過來的事實。key＝月份，value＝{薪水,生活費,失業,卡片,開牌,固定事件,階段}
+   marks  ：每一個步驟裡組長的操作，key＝「月|階段|步驟代號」
+   fixes  ：手動更正（明細裡按 +／− 改的），一筆 {r,i,k,amt}
+   repay  ：主動償還投資貸款，一筆 {r,i,amt}
 ===================================================================== */
 const CKEY='zfl-console-v1';
 const MAXSTU=6;
-let CS=null;
+let CS=null, E=null;                       /* CS＝存下來的帳本；E＝重算出來的當下狀態 */
+
+const ACCS  = ['life','fun','save','invest','learn','give'];
+const ANAME = {life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',give:'貢獻',pocket:'現金'};
+const ACOLOR= {life:'#4A7C59',fun:'#C7784A',save:'#46789B',invest:'#97742A',learn:'#7C68A6',give:'#B4566B'};
+/* 扣款順序：與主控台 index.html:1366 完全相同，兩端算出來的數字才會一樣 */
+const PORDER= ['life','pocket','invest','save','learn','give'];
+const PHS   = ['salary','allocate','event','drawn','expense'];
+const PRESET= { ml:{life:0,fun:0,save:0,invest:0,learn:0,give:0},
+                std:{life:60,fun:10,save:10,invest:10,learn:5,give:5} };
 
 function newLedger(){
-  return { v:1, room:'VISION', table:1, n:6, names:['','','','','',''],
-           hold:{}, loan:z6(), debt:z6(), other:z6(), give:z6(),
-           marks:{}, cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
+  return { v:2, room:'VISION', table:1, n:6, names:['','','','','',''],
+           alloc:{}, mlog:{}, marks:{}, fixes:[], repay:[],
+           cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
 }
 function z6(){ return [0,0,0,0,0,0]; }
+function zAcc(){ return {life:0,fun:0,save:0,invest:0,learn:0,give:0}; }
 function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e){} }
 function loadCS(){
+  /* v1 的舊帳本沒有帳戶資料，算不出正確數字，一律作廢重來（順便解掉「打開就是上一場」） */
   try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
-       const o=JSON.parse(raw); return (o&&o.v===1)?o:null; }catch(e){ return null; }
+       const o=JSON.parse(raw); return (o&&o.v===2)?o:null; }catch(e){ return null; }
 }
 function nameOf(i){ return (CS.names[i]||'').trim() || ('學員 '+LET[i]); }
 
@@ -454,9 +496,64 @@ function nums(){
 }
 function loanUnit(){ return (ST&&ST.loan&&ST.loan.unit)||10000; }
 function loanRate(){ return ((ST&&ST.loan&&ST.loan.ratePct)||10)/100; }
+function loanCapX(){ return (ST&&ST.loan&&ST.loan.capX)||10; }
 function funPer(){ return (ST&&ST.fun&&ST.fun.per)||2000; }
 function funCover(){ return (ST&&ST.fun&&ST.fun.cover)||10000; }
 function curRound(){ return CS.manual ? CS.mRound : ((ST&&ST.round)||0); }
+
+/* ---------------------------------------------------------------------
+   分配比例：key＝「從第幾月開始生效」。第 1 月在分配那一步設定；
+   第 4、8 月的重分配窗口設定的比例，從下個月才生效（寫進 r+1）。
+--------------------------------------------------------------------- */
+function allocOf(i,r){
+  for(let m=r;m>=1;m--){ const a=CS.alloc[m]; if(a && a[i]) return a[i]; }
+  return zAcc();                                   /* 從沒設定過＝月光族，全部 0 */
+}
+function allocIsSet(i,r){ const a=CS.alloc[r]; return !!(a && a[i]); }
+function allocSum(a){ return ACCS.reduce((s,k)=>s+(a[k]||0),0); }
+function allocCount(a){ return ACCS.filter(k=>(a[k]||0)>0).length; }
+function setAllocAt(i,r,obj){
+  if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
+  CS.alloc[r][i]=obj; saveCS();
+}
+
+/* ---------------------------------------------------------------------
+   主控台廣播過來的「事實」記進 mlog。這是重播的唯一輸入來源，
+   組長的操作則在 marks 裡；兩者相加就能算出任何一個月的完整狀態。
+--------------------------------------------------------------------- */
+function absorbState(){
+  if(!ST || !ST.started) return;
+  const r=ST.round; if(r<1 || r>ST.rounds) return;
+  const old=CS.mlog[r]||{};
+  const ph=Math.max(0, PHS.indexOf(ST.phase));
+  /* 第 4 月結婚生子的 +5,000 在主控台推進到繳費階段時就已經加進廣播了，
+     但示範學員當月實際付的還是舊金額（新金額從下個月起）。
+     所以生活費一律用「進入繳費階段之前」看到的那個數字，兩端才會一致。 */
+  const expense = (ST.phase==='expense' && old.expense!==undefined) ? old.expense : ST.expense;
+  CS.mlog[r]={
+    income:ST.income, expense, jobless:!!ST.jobless,
+    card: ST.card || old.card || null,
+    settle: (ST.settle && ST.settle.length) ? ST.settle : (old.settle||[]),
+    fixed: (ST.fixed && ST.fixed.length) ? ST.fixed : (old.fixed||[]),
+    nums: ST.nums||null, rate:loanRate(), unit:loanUnit(), capX:loanCapX(),
+    per:funPer(), cover:funCover(),
+    ph                                             /* 講師目前推進到第幾個階段 */
+  };
+}
+/* 手動模式：連不上主控時，用預設值自己補一筆事實，帳照樣算得下去 */
+function absorbManual(){
+  const r=CS.mRound; if(r<1||r>12) return;
+  const o=CS.mlog[r];
+  if(!o) CS.mlog[r]={ income:50000, expense:30000, jobless:false, card:null,
+                      settle:[], fixed:[], nums:null, rate:.1, unit:10000, capX:10,
+                      per:2000, cover:10000, ph:4 };
+}
+function maxRound(){
+  let m=0; for(const k in CS.mlog){ const r=+k; if(r>m) m=r; } return m;
+}
+function markGet(r,ph,id){
+  return CS.marks[r+'|'+ph+'|'+id] || { tick:z6(), cnt:z6(), loan:z6() };
+}
 
 /* 某筆投資開牌後，本金是否還留著（＝還算在投資總額裡）
    開牌後仍有配息／新增現金流的就是長期持有；純還本或血本無歸的就結束了 */
@@ -467,9 +564,9 @@ function stillHeld(h){
   return !h.st.backPrincipal;
 }
 /* 第 i 位學員在第 r 月的每月被動收入（投資配息，失業月照領） */
-function passiveOf(i,r){
-  let s=0;
-  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0;
+function passiveOf(i,r,hold){
+  const H=hold||(E&&E.hold)||{}; let s=0;
+  for(const k in H){ const h=H[k]; const u=h.units[i]||0;
     if(!u || h.buy>=r) continue;                       /* 買進的當月不配息，次月起才有 */
     if(h.st && r>h.st.round) s += u*((h.st.keepCf||0)+(h.st.addCf||0));
     else s += u*(h.cf||0);
@@ -477,35 +574,324 @@ function passiveOf(i,r){
   return s;
 }
 /* 第 i 位學員的每月其他收入（知識變現＋創業分潤；失業月會停發） */
-function otherOf(i,r){
-  let s=CS.other[i]||0;
-  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0;
+function otherOf(i,r,X){
+  const S=X||E; if(!S) return 0;
+  let s=S.other[i]||0;
+  for(const k in S.hold){ const h=S.hold[k]; const u=h.units[i]||0;
     if(u && h.st && r>h.st.round) s += u*(h.st.extraCf||0);
   }
   return s;
 }
 /* 第 i 位學員手上還留著的投資總額（本金） */
-function assetOf(i){
-  let s=0;
-  for(const k in CS.hold){ const h=CS.hold[k];
+function assetOf(i,X){
+  const S=X||E; if(!S) return 0; let s=0;
+  for(const k in S.hold){ const h=S.hold[k];
     if(stillHeld(h)) s += (h.units[i]||0)*h.price; }
   return s;
 }
-function debtOf(i){ return (CS.loan[i]||0)+(CS.debt[i]||0); }
+function debtOf(i){ return E ? (E.loan[i]||0)+(E.debt[i]||0) : 0; }
 function interestOf(i){ return Math.round(debtOf(i)*loanRate()); }
+function cashOf(i,X){ const S=X||E; return S ? ACCS.reduce((s,k)=>s+S.A[i][k],0)+S.pocket[i]+S.incoming[i] : 0; }
+function netOf(i){ return cashOf(i)+assetOf(i)-debtOf(i); }
+function flowOf(i){
+  if(!E) return 0; const r=curRound()||1;
+  const jl = (CS.mlog[r]&&CS.mlog[r].jobless);
+  const act = jl?0:((CS.mlog[r]&&CS.mlog[r].income||0)+otherOf(i,r+1));
+  const exp = (CS.mlog[r]&&CS.mlog[r].expense)||0;
+  return act + passiveOf(i,r+1) - exp - interestOf(i);
+}
 
-/* 主控廣播開牌資料 → 寫進帳本（同一張卡只寫一次，重複收到不會算兩次） */
-function absorbSettle(){
-  if(!ST || !ST.settle) return;
-  let changed=false;
-  ST.settle.forEach(s=>{
-    const h=CS.hold[s.id]; if(!h || h.st) return;
-    h.st={ round:ST.round, perUnit:s.perUnit||0, dead:!!s.dead,
-           backPrincipal:!!s.backPrincipal, addCf:s.addCf||0,
-           extraCf:s.extraCf||0, keepCf:s.keepCf||0 };
-    changed=true;
+/* =====================================================================
+   3-B. 重播引擎
+   ---------------------------------------------------------------------
+   從第 1 月開始，把「主控廣播的事實」＋「組長的操作」依序套用一次，
+   算出每位學員此刻的六個帳戶、負債、持有投資與完整歷程。
+   全部都是重算出來的，沒有任何累加狀態，所以怎麼改都不會錯。
+===================================================================== */
+function freshE(){
+  const A=[],log=[];
+  for(let i=0;i<MAXSTU;i++){ A.push(zAcc()); log.push([]); }
+  return { A, pocket:z6(), incoming:z6(), loan:z6(), debt:z6(), other:z6(), donated:z6(),
+           incTot:z6(), hold:{}, log, det:{}, mlOn:false };
+}
+function elog(X,i,r,t,c){ X.log[i].push({r,t,c:c||''}); }
+
+/* 扣款鏈：生活→現金→投資→儲蓄→學習→貢獻，不夠就記被迫負債。
+   回傳一份明細，畫面直接拿去顯示——螢幕上寫的就是引擎真的算的，不可能對不上。 */
+function payFrom(X,i,amt,label,r,borrow,mm){
+  let need=Math.round(amt); const used=[];
+  for(const k of PORDER){
+    if(need<=0) break;
+    const bal = k==='pocket'?X.pocket[i]:X.A[i][k];
+    const use = Math.min(bal,need);
+    if(use>0){
+      if(k==='pocket') X.pocket[i]-=use; else X.A[i][k]-=use;
+      need-=use; used.push({k,use});
+    }
+  }
+  if(need>0 && X.incoming[i]>0){
+    const u=Math.min(X.incoming[i],need);
+    X.incoming[i]-=u; need-=u; used.push({k:'incoming',use:u});
+  }
+  const det={ amt:Math.round(amt), used, borrowed:0, short:need };
+  if(used.length){
+    const from=used.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、');
+    elog(X,i,r,`${label} ${fm(amt)}　←　${from}`);
+  }
+  if(borrow===false || need<=0){
+    if(need>0 && borrow===false) elog(X,i,r,`${label} 還差 ${fm(need)} 付不出來`,'bad');
+    return det;
+  }
+  const U=(mm&&mm.unit)||10000;
+  const units=Math.ceil(need/U), got=units*U;
+  X.debt[i]+=got;
+  const change=got-need;
+  if(change>0) X.A[i].life+=change;
+  det.borrowed=got; det.short=need;
+  elog(X,i,r,`${label} 付不出來 → 被迫負債 ${fm(got)}（${units} 個 ${fm(U)}，月息 ${Math.round(((mm&&mm.rate)||.1)*100)}%）`,'bad');
+  return det;
+}
+/* 按比例分流一筆收入（發薪、好消息卡共用） */
+function spread(X,i,r,inc){
+  const al=allocOf(i,r); let sum=0;
+  if(allocSum(al)<=0){ X.pocket[i]+=inc; return {al,parts:[],rest:inc}; }
+  const parts=[];
+  ACCS.forEach(k=>{ const a=Math.floor(inc*(al[k]||0)/100); if(a>0){ X.A[i][k]+=a; parts.push({k,a}); } sum+=a; });
+  X.pocket[i]+=inc-sum;
+  return {al,parts,rest:inc-sum};
+}
+
+/* 從第 1 月重新算一次。畫面每次更新都會呼叫，成本極低（6 人 ×12 月）。 */
+function recompute(){
+  const X=freshE(), last=maxRound();
+  for(let r=1;r<=last;r++){
+    const f=CS.mlog[r]; if(!f) continue;
+    const upto=(typeof f.ph==='number')?f.ph:4;
+    if(upto>=0) phSalary(X,r,f);
+    if(upto>=1) phAllocate(X,r,f);
+    if(upto>=3) phDrawn(X,r,f);
+    if(upto>=4) phExpense(X,r,f);
+    applyFixes(X,r);
+  }
+  return X;
+}
+function applyFixes(X,r){
+  (CS.repay||[]).forEach(p=>{
+    if(p.r!==r) return;
+    const pay=Math.min(p.amt, X.loan[p.i]); if(pay<=0) return;
+    const d=payFrom(X,p.i,pay,'償還投資貸款',r,false,CS.mlog[r]);
+    X.loan[p.i]-=(pay-d.short);
   });
-  if(changed) saveCS();
+  (CS.fixes||[]).forEach(fx=>{
+    if(fx.r!==r) return;
+    if(ACCS.indexOf(fx.k)>=0) X.A[fx.i][fx.k]=Math.max(0,X.A[fx.i][fx.k]+fx.amt);
+    else if(fx.k==='pocket') X.pocket[fx.i]=Math.max(0,X.pocket[fx.i]+fx.amt);
+    else if(X[fx.k]) X[fx.k][fx.i]=Math.max(0,X[fx.k][fx.i]+fx.amt);
+    elog(X,fx.i,r,`人工更正：${ANAME[fx.k]||fx.k} ${fx.amt>0?'+':''}${fm(fx.amt)}`,'fix');
+  });
+}
+
+/* ── 階段①　發薪＋開牌 ─────────────────────────────────────── */
+function phSalary(X,r,f){
+  const det=[];
+  for(let i=0;i<MAXSTU;i++){
+    const pas=passiveOf(i,r,X.hold), oth=f.jobless?0:otherOf(i,r,X);
+    const act=f.jobless?0:(f.income||0);
+    const inc=act+oth+pas;
+    X.incoming[i]=inc; X.incTot[i]=inc;
+    det.push({amt:inc, act, oth, pas});
+    if(inc>0) elog(X,i,r,`領到 ${fm(inc)}（薪水 ${fm(act)}＋其他 ${fm(oth)}＋配息 ${fm(pas)}）`,'good');
+    else elog(X,i,r,'這個月一毛都沒領到','bad');
+  }
+  X.det[r+'|salary|salary']=det;
+  (f.settle||[]).forEach(s=>{
+    const h=X.hold[s.id]; if(!h) return;
+    h.st={ round:r, perUnit:s.perUnit||0, dead:!!s.dead, backPrincipal:!!s.backPrincipal,
+           addCf:s.addCf||0, extraCf:s.extraCf||0, keepCf:s.keepCf||0 };
+    const d2=[];
+    for(let i=0;i<MAXSTU;i++){
+      const u=h.units[i]||0;
+      if(!u){ d2.push({amt:0,u:0}); continue; }
+      if(s.dead){ d2.push({amt:0,u}); elog(X,i,r,`${s.title} 開牌：投的 ${fm(u*h.price)} 血本無歸`,'bad'); }
+      else{
+        const pay=u*(s.perUnit||0);
+        X.A[i].invest+=pay; d2.push({amt:pay,u});
+        elog(X,i,r,`${s.title} 開牌：${u} 單位 × ${fm(s.perUnit)} ＝ ${fm(pay)} 進投資帳戶`,'good');
+      }
+    }
+    X.det[r+'|salary|st_'+s.id]=d2;
+  });
+}
+
+/* ── 階段②　分配收入 ───────────────────────────────────────── */
+function phAllocate(X,r,f){
+  const det=[];
+  for(let i=0;i<MAXSTU;i++){
+    const inc=X.incoming[i]; X.incoming[i]=0;
+    if(inc<=0){ det.push({inc:0,parts:[],rest:0,al:allocOf(i,r)}); continue; }
+    const sp=spread(X,i,r,inc);
+    det.push({inc, parts:sp.parts, rest:sp.rest, al:sp.al});
+    elog(X,i,r, sp.parts.length
+      ? `分配 ${fm(inc)}：${sp.parts.map(p=>ANAME[p.k]+' '+fm(p.a)).join('、')}${sp.rest>0?'、現金 '+fm(sp.rest):''}`
+      : `沒有分帳戶，${fm(inc)} 全部放身上`, sp.parts.length?'':'warn');
+  }
+  X.det[r+'|allocate|alloc']=det;
+}
+
+/* ── 階段③　事件卡 ─────────────────────────────────────────── */
+function phDrawn(X,r,f){
+  const c=f.card; if(!c) return;
+  const nm=Object.assign({stressCost:30000,marryExtra:5000,knowUnit:1000,joblessSaveCost:6000,
+    charityUnit:1000,charityCover:100000,accidentCost:300000,unlockFee:1000}, f.nums||{});
+  /* 投資機會 */
+  if(c.unit>0){
+    const m=markGet(r,'drawn','card_'+c.id), det=[];
+    const h=X.hold[c.id] || (X.hold[c.id]={title:c.title,price:c.unit,cf:c.cf||0,buy:r,units:z6(),st:null});
+    h.price=c.unit; h.cf=c.cf||0;
+    for(let i=0;i<MAXSTU;i++){
+      const avail=X.A[i].invest;
+      const u=m.cnt[i]||0;
+      h.units[i]=u;
+      if(!u){ det.push({u:0,avail,cost:0,borrowed:0}); continue; }
+      const cost=u*c.unit;
+      const borrowed=Math.min(m.loan[i]||0, cost);
+      const fromAcc=Math.min(X.A[i].invest, cost-borrowed);
+      X.A[i].invest-=fromAcc; X.loan[i]+=borrowed;
+      det.push({u,avail,cost,borrowed,fromAcc});
+      elog(X,i,r,`投資「${c.title}」${u} 單位 ＝ ${fm(cost)}`+(borrowed?`（其中 ${fm(borrowed)} 是跟銀行借的）`:''),'inv');
+    }
+    if(!h.units.some(u=>u>0)) delete X.hold[c.id];
+    X.det[r+'|drawn|card_'+c.id]=det;
+    return;
+  }
+  /* 好消息：發錢，照分配比例分流 */
+  if(c.amt>0){
+    const det=[];
+    for(let i=0;i<MAXSTU;i++){
+      const sp=spread(X,i,r,c.amt);
+      det.push({amt:c.amt, parts:sp.parts, rest:sp.rest});
+      elog(X,i,r,`${c.title} ＋${fm(c.amt)}`,'good');
+    }
+    X.det[r+'|drawn|card_'+c.id]=det; return;
+  }
+  /* 支出：大額消費可用娛樂帳戶抵扣 */
+  if(c.amt<0){
+    const cost=-c.amt, off=(c.kind==='bigspend'), det=[];
+    for(let i=0;i<MAXSTU;i++) det.push(takeWithFun(X,i,r,cost,c.title,off,f));
+    X.det[r+'|drawn|card_'+c.id]=det;
+  }
+}
+/* 收一筆錢，需要時先用娛樂帳戶折抵（規則與主控台 index.html:1467 相同） */
+function takeWithFun(X,i,r,cost,label,useFun,f){
+  const per=(f&&f.per)||2000, cov=(f&&f.cover)||10000;
+  let covered=0, chunks=0;
+  if(useFun){
+    chunks=Math.min(Math.floor(X.A[i].fun/per), Math.ceil(cost/cov));
+    covered=Math.min(cost, chunks*cov);
+    if(chunks>0){ X.A[i].fun-=chunks*per;
+      elog(X,i,r,`${label}：娛樂帳戶 ${fm(chunks*per)} 折抵 ${fm(covered)}`,'good'); }
+  }
+  const rest=cost-covered;
+  if(rest<=0){ elog(X,i,r,`${label}：娛樂預算全額抵銷，一毛不用付`,'good');
+               return {amt:0, full:cost, covered, chunks, used:[], borrowed:0, short:0}; }
+  const d=payFrom(X,i,rest,label,r,true,f);
+  return Object.assign(d,{full:cost, covered, chunks});
+}
+
+/* ── 階段④　繳生活費＋月底固定事件 ─────────────────────────── */
+function phExpense(X,r,f){
+  const nm=Object.assign({stressCost:30000,marryExtra:5000,knowUnit:1000,joblessSaveCost:6000,
+    charityUnit:1000,charityCover:100000,accidentCost:300000,unlockFee:1000}, f.nums||{});
+  const det=[];
+  for(let i=0;i<MAXSTU;i++){
+    let d;
+    /* 停薪月：儲蓄帳戶付得出 6,000 就免掉當月生活費（主控台 index.html:1420） */
+    if(f.jobless && X.A[i].save>=nm.joblessSaveCost){
+      X.A[i].save-=nm.joblessSaveCost;
+      d={amt:0, waived:nm.joblessSaveCost, used:[{k:'save',use:nm.joblessSaveCost}], borrowed:0, short:0};
+      elog(X,i,r,`停薪月：用儲蓄 ${fm(nm.joblessSaveCost)} 換掉這個月的生活費 ${fm(f.expense)}`,'good');
+    }else{
+      d=payFrom(X,i,f.expense||0,'生活費',r,true,f);
+    }
+    /* 欠款利息：繳不出來的部分滾入本金 */
+    const dt=X.loan[i]+X.debt[i];
+    if(dt>0){
+      const it=Math.round(dt*((f.rate)||.1));
+      const d2=payFrom(X,i,it,'欠款利息',r,false,f);
+      if(d2.short>0){ X.debt[i]+=d2.short; elog(X,i,r,`利息還差 ${fm(d2.short)}，滾入本金`,'bad'); }
+      d.interest=it; d.intUsed=d2.used;
+    }
+    /* 手頭寬裕就自動把「被迫負債」清掉；投資貸款是他自己的選擇，不替他還 */
+    if(X.debt[i]>0 && cashOf(i,X)>=X.debt[i]+(f.expense||0)){
+      const was=X.debt[i];
+      const d3=payFrom(X,i,was,'清償被迫負債',r,false,f);
+      X.debt[i]=d3.short;
+      if(d3.short<was) elog(X,i,r,`資金充裕，清掉被迫負債 ${fm(was-d3.short)}`,'good');
+    }
+    det.push(d);
+  }
+  X.det[r+'|expense|expense']=det;
+  (f.fixed||[]).forEach(fx=>phFixed(X,r,f,fx,nm));
+  /* 月底：無意識消費（第 2 月起，帳戶數不足 2 的人現金＋生活帳戶歸零） */
+  if(X.mlOn){
+    for(let i=0;i<MAXSTU;i++){
+      if(allocCount(allocOf(i,r))>=2) continue;
+      const gone=X.pocket[i]+X.A[i].life;
+      if(gone>0) elog(X,i,r,`無意識消費：沒有分帳戶 → 現金＋生活帳戶 ${fm(gone)} 全數消失`,'bad');
+      X.pocket[i]=0; X.A[i].life=0;
+    }
+  }
+}
+function phFixed(X,r,f,fx,nm){
+  const key=r+'|expense|fx_'+fx.id, m=markGet(r,'expense','fx_'+fx.id), det=[];
+  switch(fx.id){
+    case 'mindless':
+      X.mlOn=true;
+      for(let i=0;i<MAXSTU;i++) det.push({poor:allocCount(allocOf(i,r))<2});
+      break;
+    case 'stress':
+      for(let i=0;i<MAXSTU;i++) det.push(takeWithFun(X,i,r,nm.stressCost,'報復性消費',true,f));
+      break;
+    case 'know':
+      for(let i=0;i<MAXSTU;i++){
+        const avail=X.A[i].learn, u=m.cnt[i]||0, amt=u*nm.knowUnit;
+        if(amt>0){ X.A[i].learn-=Math.min(amt,X.A[i].learn); X.other[i]+=amt;
+          elog(X,i,r,`知識變現：學習帳戶 ${fm(amt)} 換成每月固定收入 +${fm(amt)}`,'good'); }
+        det.push({u,avail,amt});
+      }
+      break;
+    case 'charity':
+      for(let i=0;i<MAXSTU;i++){
+        const avail=X.A[i].give, u=m.cnt[i]||0, amt=u*nm.charityUnit;
+        if(amt>0){ X.A[i].give-=Math.min(amt,X.A[i].give); X.donated[i]+=amt;
+          elog(X,i,r,`公益捐款 ${fm(amt)}（累計 ${fm(X.donated[i])}）`,'good'); }
+        det.push({u,avail,amt});
+      }
+      break;
+    case 'accident':
+      for(let i=0;i<MAXSTU;i++){
+        const keep=Math.min(nm.accidentCost, Math.floor(X.donated[i]/nm.charityUnit)*nm.charityCover);
+        const need=Math.max(0, nm.accidentCost-keep);
+        if(keep>0) elog(X,i,r,`重大事故：捐過 ${fm(X.donated[i])} → 貴人相助保留 ${fm(keep)}`,'good');
+        det.push(need>0 ? Object.assign(payFrom(X,i,need,'重大事故',r,true,f),{keep})
+                        : {amt:0,keep,used:[],borrowed:0,short:0});
+      }
+      break;
+    case 'realloc': {
+      /* 第一次開放重分配要付學習費；只跟真的重新設定的人收 */
+      const first=!X.reDone; X.reDone=true;
+      for(let i=0;i<MAXSTU;i++){
+        const changed=allocIsSet(i,r+1);
+        let d={changed, fee:(first&&changed)?nm.unlockFee:0};
+        if(first && changed) d=Object.assign(payFrom(X,i,nm.unlockFee,'預算重分配學習費',r,true,f),{changed,fee:nm.unlockFee});
+        det.push(d);
+      }
+      break;
+    }
+    default:
+      for(let i=0;i<MAXSTU;i++) det.push({});
+  }
+  X.det[key]=det;
 }
 
 /* =====================================================================
@@ -522,20 +908,21 @@ function buildSteps(){
   if(!ST || !ST.started) return [];
   const r=ST.round, out=[];
   if(ST.round>ST.rounds) return [{ id:'final', mode:'info', badge:'結束',
-    title:'12 個月跑完了', note:'請學員自己算：手上現金 ＋ 投資總額 － 負債＝淨資產。你可以打開右上角「☰ → 本桌總覽」把每個人的投資與負債唸給他們對。',
+    title:'12 個月跑完了', note:'下面已經幫每一位算好淨資產與每月淨現金流，直接唸給他們對。'
+      +'點任何一位可以打開他這 12 個月的完整歷程。',
     why:'最後要比的是淨資產和每月淨現金流，不是誰手上現金多。' }];
 
   switch(ST.phase){
     case 'salary': {
       out.push(salaryStep(r));
       (ST.settle||[]).forEach(s=>out.push(settleStep(s,r)));
+      /* 主控台沒有獨立的「分配」階段（發薪後直接進翻牌），所以分配掛在發薪之後。
+         錢會在講師推進到下一階段時才真正入帳，跟主控台 mainAction() 的時機一致。 */
+      out.push(allocStep(r));
       break;
     }
     case 'allocate':
-      out.push({ id:'alloc', mode:'info', badge:'等一下',
-        title:'等學員把這個月的收入分到各帳戶',
-        note:'這一步學員自己動手擺籌碼，你不用收也不用發。看到大家都擺完了，再按完成。',
-        why:'先分配再花錢，是六個帳戶的核心習慣——錢一進來就先分流，剩下的才是能花的。' });
+      out.push(allocStep(r));
       break;
     case 'event':
       out.push({ id:'wait', mode:'info', badge:'等一下',
@@ -559,6 +946,24 @@ function buildSteps(){
   return out;
 }
 
+/* 分配收入。第 1 月要逐人問比例；之後的月份只顯示「這筆錢會怎麼分」讓組長對籌碼。 */
+function allocStep(r){
+  const anySet = [0,1,2,3,4,5].some(i=>i<N() && allocSum(allocOf(i,r))>0);
+  const first  = !CS.alloc[1];
+  if(first){
+    return { id:'alloc', mode:'alloc', badge:'設定', tone:'',
+      title:'問每一位：這筆錢你要怎麼分帳戶？',
+      note:'點學員的格子，照他自己說的比例調整。他說不分、或只分兩三個帳戶，都照他說的做——'
+          +'這是他自己的決定，你只負責記下來。設定過的人格子會變綠色。',
+      why:'先分配再花錢，是六個帳戶的核心習慣。分幾個、怎麼分，答案要由他自己承擔。' };
+  }
+  return { id:'alloc', mode:'alloc', badge:'對一下', tone:'',
+    title:'學員把這個月的收入分到各帳戶',
+    note:'每一格已經照他設定的比例算好了，幫他對一下桌上的籌碼有沒有擺對。'
+        +(anySet?'':'　這桌目前沒有人分帳戶，錢全部放身上。')
+        +'　要改比例點他的格子。',
+    why:'錢一進來就先分流，剩下的才是能花的。' };
+}
 function salaryStep(r){
   const jobless=!!ST.jobless;
   return {
@@ -586,7 +991,7 @@ function salaryStep(r){
   };
 }
 function settleStep(s,r){
-  const h=CS.hold[s.id];
+  const h=(E&&E.hold[s.id])||null;
   const anyone = h && h.units.some(u=>u>0);
   if(s.dead){
     return { id:'st_'+s.id, mode:'check', badge:'開牌', tone:'take',
@@ -613,26 +1018,26 @@ function cardStep(c,r){
       title:c.title,
       money:c.unit,
       note:'每 1 單位 '+fm(c.unit)+'。'+(c.cf>0?('買了之後從下個月起，每 1 單位每月配息 '+fm(c.cf)+'。'):'')
-           +'誰要投、投幾單位，由學員自己說；你在他的格子上點幾下就是幾單位。',
+           +'誰要投、投幾單位，由學員自己說；你在他的格子上點幾下就是幾單位。'
+           +'每一格已經算好他的投資帳戶最多買得起幾單位，點到上限就點不動了。',
       why:'投資只能用「投資帳戶」的錢，這是遊戲規則，也是現實裡最該守住的一條線。',
       guard:true };
   }
-  /* 好消息：發錢 */
+  /* 好消息：發錢，會照他的分配比例自動分流 */
   if(c.amt>0){
     return { id:'card_'+c.id, mode:'give', badge:'發錢', title:c.title, money:c.amt,
-      note:'每一位都發 '+fm(c.amt)+'。',
+      note:'每一位都發 '+fm(c.amt)+'。每一格會告訴你這筆錢照他的比例要分到哪幾個帳戶。',
       why:'意外之財最容易蒸發——這筆錢要進哪個帳戶，才是真正的考驗。',
       amountOf:()=>c.amt };
   }
-  /* 支出：收錢；大額消費可用娛樂帳戶抵扣 */
+  /* 支出：收錢；大額消費會自動用娛樂帳戶抵扣 */
   if(c.amt<0){
     const cost=-c.amt, off=(c.kind==='bigspend');
     return { id:'card_'+c.id, mode:'take', badge:'收錢', title:c.title, money:cost,
-      offset: off?{per:funPer(), cover:funCover(), label:'娛樂抵扣'}:null,
-      note:'每一位都收 '+fm(cost)+'。'+(off?('有存娛樂帳戶的人，每 '+fm(funPer())+' 可以折抵 '+fm(funCover())+'，用右下角的「抵」加上去。'):''),
+      note:'每一位都收 '+fm(cost)+'。'
+          +(off?('有存娛樂帳戶的人，每 '+fm(funPer())+' 自動折抵 '+fm(funCover())+'，格子上已經算好實收多少。'):'每一格會告訴你從哪個帳戶收。'),
       why: off ? '娛樂預算不是浪費，它是擋住報復性消費的那道牆。'
-               : '小錢的破口不會讓你破產，但會慢慢偷走你的未來。',
-      amountOf:()=>cost };
+               : '小錢的破口不會讓你破產，但會慢慢偷走你的未來。' };
   }
   /* 平安月 */
   return { id:'card_'+c.id, mode:'info', badge:'平安', title:c.title,
@@ -643,15 +1048,10 @@ function expenseStep(r){
   const jobless=!!ST.jobless, nm=nums();
   return { id:'expense', mode:'take', badge:'收錢', title:'收這個月的生活費',
     money:ST.expense, moneyLabel:'生活費每人',
-    note:'每一位都收 '+fm(ST.expense)+'。有欠銀行錢的人，要再多收利息（每一格會自己算好）。'
-         +(jobless?('　停薪月：他如果願意付 '+fm(nm.joblessSaveCost)+' 儲蓄，這個月的生活費就免收，用右下角的「免」。'):'')
-         +'　真的拿不出錢的人，按右下角紅色的「欠」，記成被迫負債。',
-    why:'生活費是每個月一定跑不掉的支出，繳不出來就只能借錢——這就是負債開始的地方。',
-    saveWaive: jobless ? nm.joblessSaveCost : 0,
-    amountOf:(i)=>ST.expense + interestOf(i),
-    subOf:(i)=>{ const it=interestOf(i);
-      return it? ('生活費 '+fm(ST.expense)+'　欠款利息 '+fm(it)) : '本月固定生活支出'; },
-    allowDebt:true };
+    note:'每一格已經算好這位學員實際要付多少、從哪個帳戶出。'
+         +(jobless?('　停薪月：儲蓄帳戶有 '+fm(nm.joblessSaveCost)+' 的人會自動改成付儲蓄、免掉生活費。'):'')
+         +'　帳戶全掏空還不夠的人，系統會自動記成被迫負債，你照著念給他聽就好。',
+    why:'生活費是每個月一定跑不掉的支出，繳不出來就只能借錢——這就是負債開始的地方。' };
 }
 function fixedStep(f,r){
   const nm=nums();
@@ -659,70 +1059,63 @@ function fixedStep(f,r){
   switch(f.id){
     case 'mindless':
       return Object.assign(base,{ mode:'check',
-        note:'有開 2 個以上帳戶的人，直接打勾過關。只開 0～1 個帳戶的人是月光族——把他手上的現金和生活帳戶的錢全部收回，從這個月起每個月底都要收一次。',
+        note:'系統已經自己判斷誰是月光族了（下面紅色的那幾位）。他們手上的現金和生活帳戶要全部收回，'
+            +'而且從這個月起每個月底都要收一次。有 2 個以上帳戶的人不用動。',
         why:'沒有被分配過的錢，總是無聲無息地消失，這就是月光的真正原因。' });
     case 'stress':
       return Object.assign(base,{ mode:'take', money:nm.stressCost,
-        offset:{per:funPer(), cover:funCover(), label:'娛樂抵扣'},
-        note:'每一位都收 '+fm(nm.stressCost)+'。有存娛樂帳戶的人，每 '+fm(funPer())+' 折抵 '+fm(funCover())+'，用右下角的「抵」加上去；存滿 '+fm(funPer()*3)+' 就完全不用付。',
-        why:'壓力一來就想花錢，是人性。事先編好娛樂預算的人，才不會被這一下打亂陣腳。',
-        amountOf:()=>nm.stressCost });
+        note:'每一格已經把娛樂帳戶的折抵算進去了，照格子上的金額收就好。',
+        why:'壓力一來就想花錢，是人性。事先編好娛樂預算的人，才不會被這一下打亂陣腳。' });
     case 'marry':
       return Object.assign(base,{ mode:'info',
         note:'這個月不用收錢。從下個月開始，每個人的生活費永久增加 '+fm(nm.marryExtra)+'，畫面會自己改成新的金額，你不用記。',
         why:'人生階段一變，固定支出就跟著往上——收入沒有同步長大的人，就會被卡住。' });
     case 'know':
-      return Object.assign(base,{ mode:'count', unitAmt:nm.knowUnit, take:true, ledger:'other',
+      return Object.assign(base,{ mode:'count', unitAmt:nm.knowUnit, take:true, acct:'learn',
         title:'知識變現', money:null,
-        note:'學員說要換多少，就在他格子上點幾下，一下 '+fm(nm.knowUnit)+'（同時跟他收走學習帳戶裡同樣的錢）。換完之後，他每個月會多領這筆錢，畫面會自己加進去。',
+        note:'學員說要換多少，就在他格子上點幾下，一下 '+fm(nm.knowUnit)+'（從他的學習帳戶收走）。'
+            +'每一格已經算好他的學習帳戶最多能換幾份，點到上限就點不動了。換完他每個月會多領這筆錢。',
         why:'投資自己換來的收入，是最穩、也最不會被別人拿走的一種。' });
     case 'jobless':
       return Object.assign(base,{ mode:'info',
         why:'手上永遠留著緊急備用金，是你對抗無常的底氣。' });
     case 'charity':
-      return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, ledger:'give',
+      return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, acct:'give',
         title:'公益勸募', money:null,
-        note:'想捐的人自己說要捐多少，一下 '+fm(nm.charityUnit)+'，從貢獻帳戶收。系統會自己記住每個人捐了多少，第 9 月會用到，你不用另外抄。',
+        note:'想捐的人自己說要捐多少，一下 '+fm(nm.charityUnit)+'，從貢獻帳戶收。'
+            +'每一格已經算好他的貢獻帳戶最多能捐幾份。系統會自己記住累計金額，第 9 月會用到。',
         why:'佈施看似給出去，其實是替自己佈下一張安全網。' });
     case 'accident':
       return Object.assign(base,{ mode:'take', money:nm.accidentCost,
-        note:'每一位都收 '+fm(nm.accidentCost)+'。之前捐過款的人有貴人相助，每捐 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'，捐滿 '+fm(nm.charityUnit*3)+' 就完全不用付。每一格已經幫你算好實際要收多少了。',
-        why:'你平時種下的善意，會在最壞的時刻回來接住你。',
-        amountOf:(i)=>{
-          const units=Math.floor((CS.give[i]||0)/nm.charityUnit);
-          return Math.max(0, nm.accidentCost - Math.min(3,units)*nm.charityCover);
-        },
-        subOf:(i)=>{
-          const units=Math.floor((CS.give[i]||0)/nm.charityUnit);
-          if(!units) return '沒有捐過款，全額自付';
-          const keep=Math.min(3,units)*nm.charityCover;
-          return '捐過 '+fm(CS.give[i])+'　貴人保留 '+fm(keep);
-        },
-        allowDebt:true });
+        note:'每一格已經把「以前捐過款 → 貴人相助保留多少」算好了，照格子上的金額收。'
+            +'每捐 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'，捐滿 '+fm(nm.charityUnit*3)+' 完全不用付。',
+        why:'你平時種下的善意，會在最壞的時刻回來接住你。' });
     case 'realloc':
-      return Object.assign(base,{ mode:'check',
+      return Object.assign(base,{ mode:'alloc', allocFor:r+1, badge:'重分配',
+        note:'想調整比例的人，點他的格子重設，新的比例從下個月開始生效。'
+            +'不想改的人就不用動。'+(nm.unlockFee?('第一次開放要收 '+fm(nm.unlockFee)+' 學習費，只跟有改的人收。'):''),
         why:'能定期回頭檢查自己的分配比例，比一次分對更重要。' });
   }
-  return Object.assign(base,{ mode:'check', why:'' });
+  return Object.assign(base,{ mode:'info', why:'' });
 }
 /* 手動模式：連不上主控時，組長自己選月份與要做的事 */
 function manualSteps(){
-  const r=CS.mRound, nm=nums();
+  const r=CS.mRound;
   const acts={
-    salary:{ id:'m_salary', mode:'give', badge:'發錢', title:'發這個月的收入', money:50000,
+    salary:{ id:'salary', ph:'salary', mode:'give', badge:'發錢', title:'發這個月的收入', money:50000,
       note:'照講師報的金額發。每一格已經把這位學員的投資配息加進去了。',
-      why:'被動收入是不上班也會進來的錢。',
-      amountOf:(i)=>50000+passiveOf(i,r)+otherOf(i,r),
-      subOf:(i)=>{ const p=passiveOf(i,r); return p?('含投資配息 '+fm(p)):'薪水'; } },
-    expense:{ id:'m_expense', mode:'take', badge:'收錢', title:'收這個月的生活費', money:30000,
-      note:'照講師報的金額收。拿不出來的人按紅色的「欠」。',
-      why:'繳不出生活費就只能借錢，這就是負債的起點。',
-      amountOf:(i)=>30000+interestOf(i), allowDebt:true },
-    invest:{ id:'m_invest', mode:'units', badge:'投資', price:10000, cardId:'manual_'+r, cf:0,
+      why:'被動收入是不上班也會進來的錢。' },
+    alloc:{ id:'alloc', ph:'allocate', mode:'alloc', badge:'設定', title:'問每一位：這筆錢你要怎麼分帳戶？',
+      note:'點學員的格子，照他自己說的比例調整。不分、只分兩三個都可以。',
+      why:'先分配再花錢，是六個帳戶的核心習慣。' },
+    expense:{ id:'expense', ph:'expense', mode:'take', badge:'收錢', title:'收這個月的生活費', money:30000,
+      note:'每一格已經算好實際要付多少、從哪個帳戶出；不夠的會自動記成被迫負債。',
+      why:'繳不出生活費就只能借錢，這就是負債的起點。' },
+    invest:{ id:'card_manual_'+r, ph:'drawn', mode:'units', badge:'投資', price:10000, cardId:'manual_'+r, cf:0,
       title:'投資機會（手動）', money:10000,
-      note:'手動模式下每單位先當 10,000 記。點幾下＝幾單位，之後連上主控會用主控的金額為準。',
+      note:'手動模式下每單位先當 10,000 記。點幾下＝幾單位，一樣受他投資帳戶的餘額限制。',
       why:'投資只能用投資帳戶的錢。', guard:true },
-    check:{ id:'m_check', mode:'check', badge:'確認', title:'逐人確認這個月的事件',
+    check:{ id:'m_check', ph:'expense', mode:'check', badge:'確認', title:'逐人確認這個月的事件',
       note:'照講師在台上說的做，做完的人打勾。', why:'' }
   };
   return CS.mAct && acts[CS.mAct] ? [acts[CS.mAct]] : [];
@@ -732,20 +1125,31 @@ function manualSteps(){
    5. 畫面
 ===================================================================== */
 let STEPS=[];
-function markKey(st){ return curRound()+'|'+(CS.manual?'manual':(ST?ST.phase:'-'))+'|'+st.id; }
+/* 手動模式的步驟也歸到它「本來屬於」的階段，重播引擎才找得到 */
+function stPhase(st){ return CS.manual ? (st.ph||'expense') : (ST?ST.phase:'-'); }
+function markKey(st){ return curRound()+'|'+stPhase(st)+'|'+st.id; }
 function markOf(st){
   const k=markKey(st);
-  if(!CS.marks[k]) CS.marks[k]={ tick:[0,0,0,0,0,0], cnt:[0,0,0,0,0,0], forced:[0,0,0,0,0,0], loan:[0,0,0,0,0,0] };
+  if(!CS.marks[k]) CS.marks[k]={ tick:z6(), cnt:z6(), loan:z6() };
   return CS.marks[k];
 }
+/* 這一步、這位學員的計算明細（引擎重播時算出來的，畫面直接顯示，不會跟帳算的不一樣） */
+function detOf(st,i){ const d=E&&E.det[markKey(st)]; return d? d[i]||null : null; }
+/* 投資帳戶（加上他自己開口借的錢）最多買得起幾單位 */
+function maxUnitsFor(i,st,D){
+  const avail=D?(D.avail||0):0, m=markOf(st);
+  return Math.floor((avail+(m.loan[i]||0))/st.price);
+}
 function applyState(){
-  absorbSettle();
+  absorbState();
   const key=phaseKey();
   if(CS.cur.k!==key){ CS.cur={ k:key, i:0 }; }   /* 講師推進到下一階段 → 副控自動跳到第一步 */
   render(); saveCS(); report();
 }
 function render(){
   if(!CS) return;
+  if(CS.manual) absorbManual();
+  E=recompute();                                  /* 每次畫面更新都從第 1 月重算一次 */
   STEPS=buildSteps();
   if(CS.cur.i>=STEPS.length) CS.cur.i=Math.max(0,STEPS.length-1);
   renderTop(); renderOrder(); renderBar();
@@ -813,45 +1217,86 @@ function renderGrid(st){
   for(let i=0;i<N();i++){
     const cls=[];
     let big='', sub='', mini='';
-    if(st.mode==='give'||st.mode==='take'){
-      const forced=m.forced[i];
-      const amt = st.amountOf? st.amountOf(i) : (st.money||0);
-      let show=amt;
-      if(st.offset) show=Math.max(0, amt - m.cnt[i]*st.offset.cover);
-      if(st.saveWaive && m.cnt[i]) show=0;
-      big = (show===0 && (st.offset||st.saveWaive)) ? '不用付' : money(show);
+    const D = detOf(st,i);
+    if(st.mode==='give'){
+      const amt = st.amountOf? st.amountOf(i) : (D?D.amt:(st.money||0));
+      big = money(amt);
       sub = st.subOf? st.subOf(i) : '';
-      if(st.offset && m.cnt[i]) sub=`已折抵 ${m.cnt[i]} 次（${fm(m.cnt[i]*st.offset.cover)}）`;
-      if(st.saveWaive && m.cnt[i]) sub=`用儲蓄 ${fm(st.saveWaive)} 換掉這個月的生活費`;
-      if(forced){ cls.push('forced'); big='記為欠款'; sub=`被迫負債 ＋${fm(forced)}`; }
+      if(!sub && D && D.parts && D.parts.length)
+        sub = '會分成 '+D.parts.map(p=>ANAME[p.k]+' '+fm(p.a)).join('、')+(D.rest>0?('、現金 '+fm(D.rest)):'');
+      if(m.tick[i]) cls.push('done');
+    }
+    else if(st.mode==='take'){
+      /* 這一格顯示的就是引擎真的算出來的：實收多少、從哪個帳戶出、不夠的記多少負債 */
+      const amt = D? D.amt : (st.amountOf? st.amountOf(i) : (st.money||0));
+      const bits=[];
+      if(D){
+        if(D.waived) bits.push(`用儲蓄 ${fm(D.waived)} 換掉生活費`);
+        if(D.covered) bits.push(`娛樂折抵 ${fm(D.covered)}`);
+        if(D.keep) bits.push(`貴人保留 ${fm(D.keep)}`);
+        if(D.used && D.used.length) bits.push(D.used.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、'));
+        if(D.interest) bits.push(`含利息 ${fm(D.interest)}`);
+      }
+      big = (amt===0) ? '不用付' : money(amt);
+      sub = bits.join('　') || (st.subOf? st.subOf(i):'');
+      if(D && D.borrowed){
+        cls.push('forced');
+        big = money(amt);
+        sub = `帳戶掏空還差 ${fm(D.short)}　→　被迫負債 ＋${fm(D.borrowed)}`;
+      }
       else if(m.tick[i]) cls.push('done');
-      const mb=[];
-      if(st.offset) mb.push(`<button onclick="event.stopPropagation();bumpOffset(${i})">抵</button>`);
-      if(st.saveWaive) mb.push(`<button onclick="event.stopPropagation();bumpOffset(${i})">免</button>`);
-      if(st.allowDebt) mb.push(`<button class="red" onclick="event.stopPropagation();markForced(${i})">欠</button>`);
-      mini=mb.length?`<div class="mini">${mb.join('')}</div>`:'';
+    }
+    else if(st.mode==='alloc'){
+      const tr = st.allocFor || r;
+      const al = allocOf(i,tr), set = allocIsSet(i,tr) || (tr>1 && allocSum(al)>0);
+      const inc = (E&&E.incTot[i])||0;
+      if(set) cls.push('done');
+      const cnt = allocCount(al);
+      big = set ? (cnt? `${cnt} 個帳戶` : '不分帳戶') : '還沒問';
+      if(!set) sub='點一下設定';
+      else if(!cnt) sub='錢全部放身上（月光族）';
+      else{
+        /* 志工要對的是桌上的籌碼，所以優先顯示金額；沒收入時才顯示百分比 */
+        const on=ACCS.filter(k=>al[k]>0);
+        sub = inc>0
+          ? on.map(k=>ANAME[k]+' '+fm(Math.floor(inc*al[k]/100))).join('　')
+            + (allocSum(al)<100 ? `　現金 ${fm(inc-on.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}` : '')
+          : on.map(k=>ANAME[k]+' '+al[k]+'%').join('　');
+      }
+      mini=`<div class="mini"><button onclick="event.stopPropagation();openDrawer('alloc',${i})">設定</button></div>`;
     }
     else if(st.mode==='units'){
       const u=m.cnt[i], lo=m.loan[i];
+      const avail = D? D.avail : 0;
+      const cap = maxUnitsFor(i,st,D);
       if(u) cls.push('picked');
       big = u? `${u} 單位` : '—';
       const need=u*st.price;
-      sub = u? (`應收 ${fm(Math.max(0,need-lo))}` + (lo? `　（借款 ${fm(lo)}）`:'')) : '沒有要投就不用動';
+      if(u) sub = `應收 ${fm(Math.max(0,need-lo))}`+(lo?`　（借款 ${fm(lo)}）`:'');
+      else sub = cap>0 ? `投資帳戶 ${fm(avail)}　最多 ${cap} 單位` : `投資帳戶 ${fm(avail)}，買不起`;
       mini=`<div class="mini">
         <button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button>
         <button class="gold" onclick="event.stopPropagation();bumpLoan(${i})">借</button></div>`;
     }
     else if(st.mode==='count'){
       const u=m.cnt[i], amt=u*st.unitAmt;
+      const avail = D? D.avail : 0;
+      const cap = Math.floor(avail/st.unitAmt) + u;
       if(u) cls.push('picked');
       big = u? money(amt) : '—';
-      sub = u? `${u} 份 × ${fm(st.unitAmt)}${st.take?'（跟他收）':''}` : '沒有要做就不用動';
+      sub = u? `${u} 份 × ${fm(st.unitAmt)}${st.take?'（跟他收）':''}`
+             : (cap>0? `${ANAME[st.acct]||''}帳戶 ${fm(avail)}　最多 ${cap} 份` : `${ANAME[st.acct]||''}帳戶沒錢，做不了`);
       mini=`<div class="mini"><button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button></div>`;
     }
     else { /* check */
-      if(m.tick[i]) cls.push('done');
-      big = m.tick[i]? '已完成' : '點一下打勾';
-      sub = st.subOf? st.subOf(i) : '';
+      if(D && D.poor!==undefined){          /* 無意識消費：系統自己判斷誰是月光族 */
+        if(D.poor){ cls.push('forced'); big='要全部收回'; sub='沒有分帳戶＝月光族，現金＋生活帳戶清空'; }
+        else{ cls.push('done'); big='免執行'; sub='有 2 個以上帳戶，安全過關'; }
+      }else{
+        if(m.tick[i]) cls.push('done');
+        big = m.tick[i]? '已完成' : '點一下打勾';
+        sub = st.subOf? st.subOf(i) : '';
+      }
     }
     h+=`<div class="stu ${cls.join(' ')}">
       <span class="tick">✓</span>
@@ -869,24 +1314,27 @@ function renderGrid(st){
 }
 function ledgerLine(i,r){
   const bits=[];
+  /* 還沒分配的錢先標成「待分配」，志工才不會以為那是他已經分好的現金 */
+  if(E.incoming[i]>0) bits.push('待分配 '+fm(E.incoming[i]));
+  const c=cashOf(i)-E.incoming[i]; if(c||!E.incoming[i]) bits.push('現金 '+fm(c));
   const a=assetOf(i); if(a) bits.push('投資 '+fm(a));
   const p=passiveOf(i,r); if(p) bits.push('配息 '+fm(p)+'/月');
-  if(CS.loan[i]) bits.push(`<span class="lo">貸款 ${fm(CS.loan[i])}</span>`);
-  if(CS.debt[i]) bits.push(`<span class="bad">欠款 ${fm(CS.debt[i])}</span>`);
+  if(E.loan[i]) bits.push(`<span class="lo">貸款 ${fm(E.loan[i])}</span>`);
+  if(E.debt[i]) bits.push(`<span class="bad">欠款 ${fm(E.debt[i])}</span>`);
   return bits.join('　');
 }
 function finalGrid(){
   let h='';
   const r=curRound();
   for(let i=0;i<N();i++){
-    h+=`<div class="stu"><div class="nm"><span class="idx">${LET[i]}</span>${nameOf(i)}</div>
-      <div class="sub" style="font-size:15px;line-height:1.9;margin-top:8px">
-        投資總額　<b>${fm(assetOf(i))}</b><br>
-        每月配息　<b>${fm(passiveOf(i,r+1))}</b><br>
-        其他收入　<b>${fm(otherOf(i,r+1))}</b><br>
-        投資貸款　<b>${fm(CS.loan[i])}</b><br>
-        被迫負債　<b style="color:var(--brick)">${fm(CS.debt[i])}</b><br>
-        公益捐款　<b>${fm(CS.give[i])}</b></div></div>`;
+    const net=netOf(i), flow=flowOf(i);
+    h+=`<div class="stu"><div class="hit" onclick="openDrawer('stu',${i})"></div>
+      <div class="nm"><span class="idx">${LET[i]}</span>${nameOf(i)}</div>
+      <div class="amt" style="color:${net<0?'var(--brick)':'var(--green-900)'}">${money(net)}</div>
+      <div class="sub">淨資產　｜　每月淨現金流 <b style="color:${flow<0?'var(--brick)':'var(--green-900)'}">${money(flow)}</b></div>
+      <div class="sub" style="margin-top:4px">
+        現金 ${fm(cashOf(i))}　投資 ${fm(assetOf(i))}　配息 ${fm(passiveOf(i,r+1))}/月<br>
+        貸款 ${fm(E.loan[i])}　<span style="color:var(--brick)">欠款 ${fm(E.debt[i])}</span>　捐款 ${fm(E.donated[i])}</div></div>`;
   }
   return h;
 }
@@ -906,10 +1354,16 @@ function renderBar(){
 function stepDoneCount(st){
   const m=markOf(st);
   if(st.mode==='units'||st.mode==='count') return m.cnt.slice(0,N()).filter(x=>x>0).length;
-  return m.tick.slice(0,N()).filter((x,i)=>x||m.forced[i]).length;
+  if(st.mode==='alloc'){
+    const tr=st.allocFor||curRound(); let c=0;
+    for(let i=0;i<N();i++) if(allocIsSet(i,tr) || (tr>1 && allocSum(allocOf(i,tr))>0)) c++;
+    return c;
+  }
+  return m.tick.slice(0,N()).filter(x=>x).length;
 }
 function stepReady(st){
   if(st.mode==='units'||st.mode==='count'||st.mode==='info') return true;
+  if(st.mode==='alloc') return st.allocFor ? true : stepDoneCount(st)>=N();
   return stepDoneCount(st)>=N();
 }
 /* 「本桌完成」是組長按出來的，不會自己變成完成——主控側欄的數字才不會騙人 */
@@ -922,90 +1376,69 @@ function allDone(){ return !!phaseKey() && CS.finKey===phaseKey(); }
 function tapStu(i){
   const st=STEPS[CS.cur.i]; if(!st) return;
   const m=markOf(st);
-  if(st.mode==='units'){ bumpUnit(i,1); return; }
-  if(st.mode==='count'){ bumpUnit(i,1); return; }
-  if(m.forced[i]){ m.forced[i]=0; }            /* 再點一下＝取消欠款，誤觸可救 */
-  else m.tick[i]=m.tick[i]?0:1;
+  if(st.mode==='units' || st.mode==='count'){ bumpUnit(i,1); return; }
+  if(st.mode==='alloc'){ openDrawer('alloc',i); return; }
+  if(st.id==='final'){ openDrawer('stu',i); return; }
+  m.tick[i]=m.tick[i]?0:1;
   saveCS(); render();
 }
+/* ★ 這裡就是階段 6 的核心：買不起就點不動。
+   投資上限＝投資帳戶餘額（加上他自己開口借的錢）÷ 每單位價；
+   知識變現與捐款的上限＝對應帳戶的餘額。 */
 function bumpUnit(i,d){
   const st=STEPS[CS.cur.i]; if(!st) return;
-  const m=markOf(st);
-  m.cnt[i]=Math.max(0,(m.cnt[i]||0)+d);
-  if(st.mode==='units' && m.cnt[i]*st.price < m.loan[i]) m.loan[i]=0;
-  saveCS(); commitStep(st); commitLoans(st); render();
-}
-/* 娛樂抵扣／儲蓄抵免：一直點會循環回 0，點錯不用怕 */
-function bumpOffset(i){
-  const st=STEPS[CS.cur.i]; if(!st) return;
-  const m=markOf(st);
-  const amt = st.amountOf? st.amountOf(i) : (st.money||0);
-  const max = st.saveWaive ? 1 : Math.max(1, Math.ceil(amt/st.offset.cover));
-  m.cnt[i]=((m.cnt[i]||0)+1) % (max+1);
+  const m=markOf(st), D=detOf(st,i);
+  const now=m.cnt[i]||0, nx=Math.max(0,now+d);
+  if(d>0){
+    if(st.mode==='units'){
+      const cap=maxUnitsFor(i,st,D);
+      if(nx>cap){
+        const avail=D?(D.avail||0):0;
+        toast(cap>0
+          ? `${nameOf(i)} 的投資帳戶只剩 ${fm(avail)}，最多 ${cap} 單位。要再多買，他得自己開口跟銀行借。`
+          : `${nameOf(i)} 的投資帳戶只有 ${fm(avail)}，買不起這一張。`);
+        return;
+      }
+    }
+    if(st.mode==='count'){
+      const avail=D?(D.avail||0):0;
+      const cap=Math.floor(avail/st.unitAmt)+now;
+      if(nx>cap){ toast(`${nameOf(i)} 的${ANAME[st.acct]||''}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`); return; }
+    }
+  }
+  m.cnt[i]=nx;
+  if(st.mode==='units' && nx*st.price < (m.loan[i]||0)) m.loan[i]=0;
   saveCS(); render();
 }
-/* 借款上限＝（薪水＋其他收入＋被動收入）× 10。超過只提醒，不強制擋，
-   因為每位學員真正的收入以他自己桌上的紀錄為準，志工不必為了系統去查帳。 */
+/* 借款上限＝月總收入（薪水＋其他＋被動）× 10，與規則說明頁一致。
+   副控台現在算得出每位學員真正的收入，所以這一條改成硬擋，不再只是提醒。 */
 function loanCapOf(i){
-  const r=curRound();
-  const act = (ST && !ST.jobless) ? (ST.income||0) + otherOf(i,r) : 0;   /* 失業月薪水和其他收入都停發 */
-  const inc = act + passiveOf(i,r);
-  return inc * (((ST&&ST.loan&&ST.loan.capX)||10));
+  const inc=(E&&E.incTot[i])||0;
+  return inc*loanCapX();
 }
 function bumpLoan(i){
   const st=STEPS[CS.cur.i]; if(!st || st.mode!=='units') return;
   const m=markOf(st);
-  const need=(m.cnt[i]||0)*st.price;
-  if(!need){ toast('先點格子決定他要投幾單位'); return; }
-  const nx=(m.loan[i]||0)+loanUnit();
-  m.loan[i] = nx>need ? 0 : nx;               /* 借超過投資金額就歸零重來，誤觸可救 */
+  const now=m.loan[i]||0, U=loanUnit(), nx=now+U;
+  const cost=(m.cnt[i]||0)*st.price;
+  /* 借來的錢只能用在這一張投資上。允許比目前買的多出一個單位，
+     他才有空間再往上加一單位；超過就歸零重來，誤觸可救。 */
+  if(nx > cost+U){
+    m.loan[i]=0; saveCS(); render();
+    toast('借款不能超過他要投資的金額，已歸零重來');
+    return;
+  }
+  /* 借款總額上限＝月總收入 ×10（規則說明頁那一條），這裡是硬擋 */
   const cap=loanCapOf(i);
-  if(cap && CS.loan[i]-((m.applied&&m.applied[i])||0)+m.loan[i] > cap)
-    toast(`提醒：${nameOf(i)} 的借款上限約 ${fm(cap)}，請和他確認`);
-  saveCS(); commitStep(st); commitLoans(st); render();
-}
-function markForced(i){
-  const st=STEPS[CS.cur.i]; if(!st || !st.allowDebt) return;
-  const m=markOf(st);
-  const amt = st.amountOf? st.amountOf(i) : (st.money||0);
-  if(m.forced[i]) m.forced[i]=0; else { m.forced[i]=amt; m.tick[i]=0; }
-  saveCS(); commitForced(st); render();
-}
-/* 把這一步的結果寫進長期帳本（投資單位、貸款、知識變現、捐款） */
-function commitStep(st){
-  const m=markOf(st);
-  if(st.mode==='units'){
-    const h = CS.hold[st.cardId] || (CS.hold[st.cardId]={
-      title:st.title, price:st.price, cf:st.cf||0, buy:curRound(), units:z6(), st:null });
-    h.price=st.price; h.cf=st.cf||0;
-    for(let i=0;i<MAXSTU;i++) h.units[i]=m.cnt[i]||0;
-    if(!h.units.some(u=>u>0)) delete CS.hold[st.cardId];
+  const otherMonths=Math.max(0,((E&&E.loan[i])||0)-Math.min(now,cost));
+  if(cap && otherMonths+nx>cap){
+    toast(`${nameOf(i)} 的借款上限是月總收入 ×${loanCapX()}＝${fm(cap)}，已經借到頂了。`);
+    return;
   }
-  if(st.mode==='count' && st.ledger){
-    for(let i=0;i<MAXSTU;i++) CS[st.ledger][i]=(m.cnt[i]||0)*st.unitAmt;
-  }
-  saveCS();
-}
-/* 貸款要在離開這一步時才真正入帳，中途加減不會重複累加 */
-function commitLoans(st){
-  if(!st || st.mode!=='units') return;
-  const m=markOf(st);
-  if(m.applied) { for(let i=0;i<MAXSTU;i++) CS.loan[i]-=m.applied[i]||0; }
-  m.applied=m.loan.slice();
-  for(let i=0;i<MAXSTU;i++) CS.loan[i]+=m.applied[i]||0;
-  saveCS();
-}
-function commitForced(st){
-  if(!st) return;
-  const m=markOf(st);
-  if(m.dapplied){ for(let i=0;i<MAXSTU;i++) CS.debt[i]-=m.dapplied[i]||0; }
-  m.dapplied=m.forced.slice();
-  for(let i=0;i<MAXSTU;i++) CS.debt[i]+=m.dapplied[i]||0;
-  saveCS();
+  m.loan[i]=nx;
+  saveCS(); render();
 }
 function nextStep(){
-  const st=STEPS[CS.cur.i];
-  if(st){ commitStep(st); commitLoans(st); commitForced(st); }
   if(CS.cur.i < STEPS.length-1){ CS.cur.i++; }
   else if(!allDone()){ CS.finKey=phaseKey(); toast('本桌完成，已回報給講師'); }
   saveCS(); render(); report();
@@ -1020,15 +1453,66 @@ function prevStep(){
 function openDrawer(kind,i){
   const p=$('#dPanel');
   if(kind==='stu') p.innerHTML=stuPanel(i);
+  else if(kind==='alloc') p.innerHTML=allocPanel(i);
   else if(kind==='manual') p.innerHTML=manualPanel();
   else p.innerHTML=setPanel();
   $('#drawer').classList.add('open');
+}
+/* 分配比例：六條拉桿。刻意不寫任何「應該分幾個」的建議——
+   分不分、分幾個，是學員自己的決定，也是第 2 月無意識消費要教的東西。 */
+function allocTarget(){
+  const st=STEPS[CS.cur.i];
+  if(st && st.mode==='alloc') return st.allocFor || curRound() || 1;
+  return Math.max(1,curRound());
+}
+function allocPanel(i){
+  const tr=allocTarget();
+  const al=Object.assign(zAcc(), allocOf(i,tr));
+  const sum=allocSum(al);
+  const inc=(E&&E.incTot[i])||0;
+  const rows=ACCS.map(k=>`
+    <div class="alrow">
+      <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i>${ANAME[k]}</span>
+      <input type="range" min="0" max="100" step="5" value="${al[k]}"
+        oninput="setAllocK(${i},'${k}',this.value)">
+      <span class="ap">${al[k]}%</span>
+      <span class="am">${inc>0&&al[k]>0?fm(Math.floor(inc*al[k]/100)):''}</span>
+    </div>`).join('');
+  const nx=(i+1<N())?i+1:-1;
+  return `<button class="dx" onclick="closeDrawer()">✕</button>
+    <h3>${nameOf(i)}　的分配比例</h3>
+    <div style="font-size:13px;color:var(--ink-soft);line-height:1.6;margin-bottom:14px">
+      照學員自己說的調。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
+      ${tr>1?`這次調整從第 ${tr} 月開始生效。`:'第 1 月起生效。'}</div>
+    <div class="alloc">${rows}
+      <div class="arest ${sum>100?'over':''}">
+        ${sum>100 ? `超過 100% 了（多了 ${sum-100}%），請調回`
+          : sum===100 ? '100% 都分完了，身上不留現金'
+          : `沒分配到的 ${100-sum}% 會直接放在他身上當現金${inc>0?`（${fm(inc-ACCS.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}）`:''}`}</div>
+    </div>
+    <div class="apre">
+      <button onclick="setPreset(${i},'ml')">他說不分帳戶</button>
+      <button onclick="setPreset(${i},'std')">標準六帳戶</button>
+    </div>
+    <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
+      onclick="${nx>=0?`openDrawer('alloc',${nx})`:'closeDrawer()'}">
+      ${nx>=0?'記好了，問下一位 →':'記好了，回主畫面'}</button>`;
+}
+function setAllocK(i,k,v){
+  const tr=allocTarget();
+  const al=Object.assign(zAcc(), allocOf(i,tr));
+  al[k]=Math.max(0,Math.min(100,parseInt(v)||0));
+  setAllocAt(i,tr,al); render(); openDrawer('alloc',i);
+}
+function setPreset(i,p){
+  setAllocAt(i,allocTarget(),Object.assign({},PRESET[p]));
+  render(); openDrawer('alloc',i);
 }
 function closeDrawer(){ $('#drawer').classList.remove('open'); render(); }
 function stuPanel(i){
   const r=curRound();
   let holds='';
-  for(const k in CS.hold){ const h=CS.hold[k]; const u=h.units[i]||0; if(!u) continue;
+  for(const k in E.hold){ const h=E.hold[k]; const u=h.units[i]||0; if(!u) continue;
     const state = h.st ? (h.st.dead?'已開牌・歸零':(stillHeld(h)?'已開牌・繼續持有':'已開牌・本金已退')) : '等開牌';
     holds+=`<div class="drow"><div class="k">${h.title}<br>
       <span style="font-size:12px;color:var(--ink-soft)">${u} 單位 × ${fm(h.price)}　${state}</span></div>
@@ -1036,37 +1520,70 @@ function stuPanel(i){
       <button onclick="adjHold('${k}',${i},1)">＋</button></div></div>`;
   }
   if(!holds) holds='<div class="drow"><div class="k" style="color:var(--ink-soft)">還沒有任何投資</div></div>';
+  const al=allocOf(i,r);
+  let accs='';
+  ACCS.forEach(k=>{
+    accs+=`<div class="drow"><div class="k"><i class="adot" style="background:${ACOLOR[k]}"></i>${ANAME[k]}
+      ${al[k]>0?`<span style="color:var(--ink-soft);font-size:12px">（分配 ${al[k]}%）</span>`:''}</div>
+      <div class="v">${fm(E.A[i][k])}</div>
+      <div class="adj"><button onclick="adjAcc('${k}',${i},-1000)">−</button>
+      <button onclick="adjAcc('${k}',${i},1000)">＋</button></div></div>`;
+  });
+  accs+=`<div class="drow"><div class="k"><i class="adot" style="background:#9A9484"></i>現金（沒分配到的）</div>
+    <div class="v">${fm(E.pocket[i]+E.incoming[i])}</div>
+    <div class="adj"><button onclick="adjAcc('pocket',${i},-1000)">−</button>
+    <button onclick="adjAcc('pocket',${i},1000)">＋</button></div></div>`;
+  const hist=(E.log[i]||[]).slice().reverse().map(l=>
+    `<div class="hrow ${l.c}"><span class="hm">${l.r}月</span>${l.t}</div>`).join('')
+    || '<div class="hrow" style="color:var(--ink-soft)">還沒有任何紀錄</div>';
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>${nameOf(i)}</h3>
-    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">數字點錯了可以在這裡改回來</div>
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">
+      淨資產 <b style="color:var(--green-900)">${fm(netOf(i))}</b>　每月淨現金流 <b>${fm(flowOf(i))}</b><br>
+      桌上籌碼跟這裡對不上時，用 +／− 改成跟桌上一樣，後面每個月會自動重算。</div>
+    <div class="dsec">六 個 帳 戶
+      <button style="float:right;font-size:12px;color:var(--green);font-weight:700"
+        onclick="openDrawer('alloc',${i})">改分配比例</button></div>${accs}
     <div class="dsec">持 有 的 投 資</div>${holds}
     <div class="dsec">收 入 與 負 債</div>
     <div class="drow"><div class="k">每月投資配息（被動）</div><div class="v">${fm(passiveOf(i,r+1))}</div></div>
     <div class="drow"><div class="k">每月其他收入（知識變現等）</div><div class="v">${fm(otherOf(i,r+1))}</div>
-      <div class="adj"><button onclick="adjNum('other',${i},-1000)">−</button>
-      <button onclick="adjNum('other',${i},1000)">＋</button></div></div>
-    <div class="drow"><div class="k">投資貸款（他自己開口借的）</div><div class="v" style="color:var(--gold-deep)">${fm(CS.loan[i])}</div>
-      <div class="adj"><button onclick="adjNum('loan',${i},-loanUnit())">−</button>
-      <button onclick="adjNum('loan',${i},loanUnit())">＋</button></div></div>
-    <div class="drow"><div class="k">被迫負債（繳不出錢欠的）</div><div class="v" style="color:var(--brick)">${fm(CS.debt[i])}</div>
-      <div class="adj"><button onclick="adjNum('debt',${i},-10000)">−</button>
-      <button onclick="adjNum('debt',${i},10000)">＋</button></div></div>
-    <div class="drow"><div class="k">公益累計捐款</div><div class="v">${fm(CS.give[i])}</div>
-      <div class="adj"><button onclick="adjNum('give',${i},-1000)">−</button>
-      <button onclick="adjNum('give',${i},1000)">＋</button></div></div>
+      <div class="adj"><button onclick="adjAcc('other',${i},-1000)">−</button>
+      <button onclick="adjAcc('other',${i},1000)">＋</button></div></div>
+    <div class="drow"><div class="k">投資貸款（他自己開口借的）</div><div class="v" style="color:var(--gold-deep)">${fm(E.loan[i])}</div>
+      ${E.loan[i]?`<div class="adj"><button style="width:auto;padding:0 10px;font-size:14px" onclick="doRepay(${i})">還款</button></div>`:''}</div>
+    <div class="drow"><div class="k">被迫負債（繳不出錢欠的）</div><div class="v" style="color:var(--brick)">${fm(E.debt[i])}</div>
+      <div class="adj"><button onclick="adjAcc('debt',${i},-10000)">−</button>
+      <button onclick="adjAcc('debt',${i},10000)">＋</button></div></div>
+    <div class="drow"><div class="k">公益累計捐款</div><div class="v">${fm(E.donated[i])}</div></div>
     <div class="dsec">每 月 應 付 利 息</div>
     <div class="drow"><div class="k">欠款 ${fm(debtOf(i))} × 月息 ${Math.round(loanRate()*100)}%</div>
-      <div class="v">${fm(interestOf(i))}</div></div>`;
+      <div class="v">${fm(interestOf(i))}</div></div>
+    <div class="dsec">他 這 一 局 的 歷 程</div>
+    <div class="hist">${hist}</div>`;
 }
+/* 投資單位改的是「當初買的那一步」，所以之後每個月的配息會自動跟著重算 */
 function adjHold(k,i,d){
-  const h=CS.hold[k]; if(!h) return;
-  h.units[i]=Math.max(0,(h.units[i]||0)+d);
-  if(!h.units.some(u=>u>0)) delete CS.hold[k];
-  saveCS(); openDrawer('stu',i);
+  const h=E.hold[k]; if(!h) return;
+  const key=h.buy+'|drawn|card_'+k;
+  const m=CS.marks[key]; if(!m){ toast('這筆投資找不到當初的紀錄，請用「改分配比例」旁的帳戶數字修正'); return; }
+  m.cnt[i]=Math.max(0,(m.cnt[i]||0)+d);
+  if(m.cnt[i]*h.price < (m.loan[i]||0)) m.loan[i]=0;
+  saveCS(); render(); openDrawer('stu',i);
 }
-function adjNum(key,i,d){
-  CS[key][i]=Math.max(0,(CS[key][i]||0)+d);
-  saveCS(); openDrawer('stu',i);
+/* 人工更正：記成「第 r 月的一筆更正」，重播時會套用，之後所有月份自動跟著對 */
+function adjAcc(k,i,d){
+  const r=Math.max(1,curRound());
+  CS.fixes.push({r,i,k,amt:d});
+  saveCS(); render(); openDrawer('stu',i);
+}
+function doRepay(i){
+  const r=Math.max(1,curRound());
+  const amt=Math.min(loanUnit(), E.loan[i]);
+  if(amt<=0) return;
+  CS.repay.push({r,i,amt});
+  saveCS(); render(); openDrawer('stu',i);
+  toast(`${nameOf(i)} 還了 ${fm(amt)} 投資貸款`);
 }
 function setPanel(){
   const link = (ST||CS.manual) ? '' :
@@ -1088,16 +1605,16 @@ function overviewHTML(){
   const r=curRound(); let h='';
   for(let i=0;i<N();i++){
     h+=`<div class="drow"><div class="k">${nameOf(i)}<br>
-      <span style="font-size:12px;color:var(--ink-soft)">投資 ${fm(assetOf(i))}　配息 ${fm(passiveOf(i,r+1))}/月</span></div>
-      <div class="v" style="font-size:15px">${CS.debt[i]?`<span style="color:var(--brick)">欠 ${fm(CS.debt[i])}</span>`:''}
-        ${CS.loan[i]?`<span style="color:var(--gold-deep)">貸 ${fm(CS.loan[i])}</span>`:''}</div></div>`;
+      <span style="font-size:12px;color:var(--ink-soft)">現金 ${fm(cashOf(i))}　投資 ${fm(assetOf(i))}　配息 ${fm(passiveOf(i,r+1))}/月</span></div>
+      <div class="v" style="font-size:15px">${fm(netOf(i))}<br>
+        <span style="font-size:11px;font-weight:400">${E.debt[i]?`<span style="color:var(--brick)">欠 ${fm(E.debt[i])}</span> `:''}${E.loan[i]?`<span style="color:var(--gold-deep)">貸 ${fm(E.loan[i])}</span>`:''}</span></div></div>`;
   }
   return h;
 }
 function manualPanel(){
   let mon='';
   for(let i=1;i<=12;i++) mon+=`<button class="${CS.mRound===i?'on':''}" onclick="setManualRound(${i})">${i}</button>`;
-  const acts=[['salary','發薪水'],['expense','收生活費'],['invest','投資機會'],['check','逐人確認']];
+  const acts=[['salary','發薪水'],['alloc','分配到帳戶'],['expense','收生活費'],['invest','投資機會'],['check','逐人確認']];
   let ab='';
   acts.forEach(([k,t])=>ab+=`<button class="dbtn ${CS.mAct===k?'':''}" style="${CS.mAct===k?'border-color:var(--green);color:var(--green-900)':''}" onclick="setManualAct('${k}')">${t}</button>`);
   return `<button class="dx" onclick="closeDrawer()">✕</button>
@@ -1111,7 +1628,16 @@ function manualPanel(){
     ${ST?'<button class="dbtn" style="margin-top:18px" onclick="backAuto()">回到自動模式（跟著講師走）</button>':''}`;
 }
 function setManualRound(i){ CS.mRound=i; CS.manual=true; saveCS(); openDrawer('manual'); }
-function setManualAct(k){ CS.mAct=k; CS.manual=true; CS.cur.i=0; saveCS(); closeDrawer(); render(); }
+function setManualAct(k){
+  CS.mAct=k; CS.manual=true; CS.cur.i=0;
+  absorbManual();
+  /* 手動模式的投資：補一張假卡進事實表，重播才算得出來 */
+  if(k==='invest'){
+    const r=CS.mRound, f=CS.mlog[r];
+    if(f && !f.card) f.card={ id:'manual_'+r, kind:'inv', title:'投資機會（手動）', unit:10000, cf:0, amt:0 };
+  }
+  saveCS(); closeDrawer(); render();
+}
 function backAuto(){ CS.manual=false; CS.mAct=''; saveCS(); closeDrawer(); render(); }
 function wipe(){
   if(!confirm('確定要清空這一桌的所有紀錄？投資、貸款、捐款都會不見。')) return;
