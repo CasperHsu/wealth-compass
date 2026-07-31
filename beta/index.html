@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>視界致富羅盤・課堂主持台（BETA）</title>
+<title>視界致富羅盤・課堂主持台</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AD%3C/text%3E%3C/svg%3E">
 <style>
 /* ============ 視界學院 CIS・韓系水彩 tokens ============ */
@@ -748,13 +748,14 @@ const DEF = {
   mindlessMonth:2,                                   /* 無意識消費（帳戶數<2 者月底歸零） */
   stressMonth:3,  stressCost:30000,                  /* 壓力事件：報復性消費 3 萬 */
   funPer:2000, funCover:10000,                       /* 娛樂每 2,000 抵 10,000（壓力/大額消費共用） */
-  marryMonth:4,   marryExtra:5000,                   /* 結婚生子：固定支出永久 +5,000 */
-  knowMonth:5,                                       /* 知識變現：學習 1,000 為單位 1:1 轉固定收入 */
-  joblessMonth:6, joblessLen:2, joblessSaveCost:6000,/* 第6月宣布 → 第7、8月停薪；儲蓄 6,000 抵當月生活費 */
-  charityMonth:7, charityUnit:1000,                  /* 公益：每 1,000 為單位自由捐贈 */
-  accidentMonth:9, accidentCost:300000, charityCover:100000, /* 重大事故 30 萬；每捐 1,000 保留 10 萬 */
-  reallocA:4, reallocB:8, unlockFee:1000,            /* 預算重分配：第 4、8 月；首次學費 1,000 */
-  loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝月總收入 10 倍 */
+  inflationMonth:4, inflationExtra:5000,             /* 通貨膨脹：固定支出永久 +5,000 */
+  joblessMonth:5, joblessLen:2, joblessSaveCost:10000,/* 第5月宣布、第5～6月停薪；儲蓄 10,000 抵當月固定支出 */
+  charityMonth:6, charityUnit:1000, giveBoost:10,    /* 公益：每 1,000 為單位；從貢獻帳戶捐 1,000 記 10,000 */
+  knowMonth:7,                                       /* 知識變現：學習 1,000 為單位 1:1 轉固定收入 */
+  marryMonth:8,   marryExtra:5000,                   /* 結婚生子：固定支出永久 +5,000 */
+  accidentMonth:9, accidentCost:300000, charityCover:50000, /* 重大事故 30 萬；每捐 1,000 保留 5 萬 */
+  reallocA:4, reallocB:8, unlockFee:2000, unlockFeeLearn:500, /* 重分配：第 4、8 月；首次 2,000，用學習帳戶付只要 500 */
+  loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝每月淨現金流 10 倍 */
   timeBudgetMin:90,
   mvUrl:''
 };
@@ -820,34 +821,36 @@ function washSVG(color,op){
   </svg>`;
 }
 
-/* ---------- 事件卡目錄 ---------- */
+/* ---------- 事件卡目錄 ----------
+   gms＝開牌時的「額外收益倍數」四選一（0.5＝+50%），翻牌當下抽定、全班同一個結果。
+   back＝本金領回／keep＝本金續留資產／dead＝本金必定歸零／failIfNeg＝抽到負數才歸零。 */
 const CAT = {
   /* ── 前期 1–4 月 ── */
-  car_fix:{kind:'expense',tag:'日常・小狀況',wash:'#A9BB9B',title:'車子保養維修',amt:-3000,
-    flavor:'儀表板亮起警示燈，老師傅搖搖頭：「再不換來令片，就不是三千能解決的了。」'},
-  crash1:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災浮現・危機入市',unit:1000,cf:0,gm:2,back:true,mystery:'gamble',
+  car_fix:{kind:'expense',tag:'日常・小狀況',wash:'#A9BB9B',title:'車子保養維修',amt:-5000,
+    flavor:'儀表板亮起警示燈，老師傅搖搖頭：「來令片、機油、輪胎一起換，五千跑不掉。」'},
+  crash1:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災浮現・危機入市',unit:1000,cf:0,gms:[0,0.5,1,2],back:true,mystery:'gamble',
     flavor:'黑天鵝來襲，股市單週重挫。有人恐慌出場，有人逢低佈局——歷史不會重演，但總是驚人地相似。'},
-  div_bond:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'高股息與債券配置',unit:5000,cf:500,gm:1,keep:true,
+  div_bond:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'高股息與債券配置',unit:5000,cf:500,gms:[0,0.5,1,2],keep:true,
     flavor:'降息循環開始，優質公司債與高股息標的出現漂亮買點。不會一夜致富，卻能穩穩長出現金流。'},
-  bonus10:{kind:'good',tag:'日常・好消息',wash:'#93AC87',title:'年終／績效獎金入袋',amt:10000,
-    flavor:'今年考績不錯，獎金比預期多。這筆錢，你會讓它去哪裡？'},
+  bonus10:{kind:'good',tag:'日常・好消息',wash:'#93AC87',title:'年終／績效獎金入袋',amt:20000,
+    flavor:'今年考績不錯，獎金比預期多了一倍。這筆錢，你會讓它去哪裡？'},
   /* ── 中期 5–8 月 ── */
   sublord:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'二房東投資機會',unit:10000,cf:1000,nosettle:true,keep:true,
     flavor:'市中心一層老公寓釋出長租約。簡單整理、分租出去，當起合法二房東，每月穩穩收租金價差。'},
-  house3:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'三房兩廳的不動產',unit:30000,cf:3000,gm:2,keep:true,
+  house3:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'三房兩廳的不動產',unit:30000,cf:3000,gms:[0,1,2,3],keep:true,
     flavor:'蛋白區一間格局方正的三房兩廳，屋主急售。租金投報率漂亮，增值想像空間更大。'},
-  crash2:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災再現・危機入市',unit:5000,cf:0,gm:0,dead:true,mystery:'gamble',
+  crash2:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'股災再現・危機入市',unit:5000,cf:0,gms:[-2,-1,-0.5,0],dead:true,mystery:'gamble',
     flavor:'市場又崩了一次，恐慌蔓延，也有人開始默默進場。歷史不會重演，但總是驚人地相似。'},
-  startup:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'朋友邀你一起創業',unit:20000,cf:0,gm:3,keep:true,extraCf:5000,mystery:'unknown',
+  startup:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'朋友邀你一起創業',unit:30000,cf:0,gms:[-1,0,1,3],keep:true,extraCf:5000,failIfNeg:true,mystery:'unknown',
     flavor:'最信任的夥伴帶著商業計畫書來找你：「這個市場正要起飛，就缺你這一份資金。」預期收益——未知。'},
   /* ── 後期 9–12 月 ── */
-  oldhouse:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'老屋活化・合法隔套公益出租',unit:100000,cf:20000,gm:10,keep:true,pin:[9,10],
+  oldhouse:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'老屋活化・合法隔套公益出租',unit:200000,cf:40000,gms:[0,1,2.5,5],keep:true,pin:[9,10],
     flavor:'一筆低於市價的老透天釋出。合法室內裝修隔套、加入公益出租人計畫，收租又節稅的長線資產。'},
-  angel:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'產業投資天使輪',unit:80000,cf:0,gm:8,keep:true,addCf:10000,mystery:'teaser',pin:[9,10],
+  angel:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'產業投資天使輪',unit:100000,cf:5000,gms:[0,2,4,6],keep:true,addCf:10000,mystery:'teaser',pin:[9,10],
     flavor:'一間主打「重塑認知邊界、開創財務與時間自由」的財商學院正招募核心合夥人，正是入股時機。'},
   luxury:{kind:'bigspend',tag:'試煉・慾望考驗',wash:'#C96A5B',title:'大額消費的誘惑',amt:-200000,pin:[11],
     flavor:'走過旗艦店櫥窗，那台跑車／那只名錶在燈光下閃閃發亮。犒賞自己一整年的辛苦——刷下去了。'},
-  bridge:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'團隊內部資金代墊周轉',unit:50000,cf:5000,nosettle:true,keep:true,pin:[12],
+  bridge:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'團隊內部資金代墊周轉',unit:100000,cf:10000,nosettle:true,keep:true,pin:[12],
     flavor:'你信任的商業團隊短期週轉，開出穩定的代墊利息。一年下來的信用與人脈，此刻變成了機會。'},
   /* ── 補牌（月數改大於 12 時使用） ── */
   calm1:{kind:'calm',tag:'日常・風平浪靜',wash:'#A9BB9B',title:'平凡而珍貴的一個月',
@@ -884,7 +887,7 @@ function newDemo(){
 }
 function newState(){
   const cfg = {...DEF};
-  return {v:5, cfg, round:0, phase:'salary', started:false,
+  return {v:7, cfg, round:0, phase:'salary', started:false,
     deck:buildDeck(cfg), recap:{}, pend:[], demo:newDemo(), muted:false, coop:false,
     expenseBonus:0, budgetUnlocked:false, mindlessOn:false,
     timer:{accumMs:0, runningSince:null}};
@@ -905,13 +908,14 @@ function buildDeck(cfg){
 }
 
 /* ---------- 存檔／復原 ---------- */
-const LSKEY='zfl-compass-v6b';   /* beta 開發線專用；正式版是 zfl-compass-v5，兩邊存檔互不覆蓋 */
+/* 規則改版就要換鍵：舊存檔的月份表與卡片數值都不一樣，讓它讀進新引擎會出怪事 */
+const LSKEY='zfl-compass-v7';
 function save(){ try{ localStorage.setItem(LSKEY, JSON.stringify(S)); }catch(e){}
   try{ syncPush(); }catch(e){} }   /* 單機模式下 syncPush 直接 return，等同沒這行 */
 function load(){
   try{
     const s=JSON.parse(localStorage.getItem(LSKEY));
-    if(s && s.v===5){
+    if(s && s.v===7){
       if(!s.timer) s.timer={accumMs:0, runningSince: s.started?Date.now():null};
       if(!s.cfg.timeBudgetMin) s.cfg.timeBudgetMin=DEF.timeBudgetMin;
       if(!s.demo.holds) s.demo.holds=[];
@@ -1068,14 +1072,18 @@ function syncSettle(){
   if(!S.started || S.round<1 || S.round>S.cfg.rounds) return [];
   return S.pend.filter(p=>p.due===S.round && !p.nosettle).map(p=>{
     const c=CAT[p.id]; if(!c) return null;
-    return { id:p.id, title:c.title, unit:c.unit, dead:!!c.dead,
-             perUnit: c.dead ? 0 : (c.unit*c.gm + (c.back?c.unit:0)),
+    const gm=gmOf(p), wipe=settleWipes(c,gm);
+    return { id:p.id, title:c.title, unit:c.unit, dead:wipe,
+             gmPct: Math.round(gm*100),
+             perUnit: wipe ? 0 : Math.round(c.unit*gm + (c.back?c.unit:0)),
+             owePerUnit: (c.dead && gm<0) ? Math.round(c.unit*-gm) : 0,
              backPrincipal:!!c.back,
-             addCf:c.addCf||0, extraCf:c.extraCf||0,
-             keepCf:(c.cf>0 && !c.addCf) ? c.cf : 0 };
+             addCf: wipe?0:(c.addCf||0), extraCf: wipe?0:(c.extraCf||0),
+             stopCf: wipe ? (c.cf||0) : 0,          /* 標的沒了，之前的配息要停掉 */
+             keepCf: (!wipe && c.cf>0) ? c.cf : 0 };
   }).filter(Boolean);
 }
-/* 本月的固定事件（同一個月可能有兩件，例如第 4 月＝結婚生子＋重分配），用白話寫給志工看 */
+/* 本月的固定事件（同一個月可能有兩件，例如第 4 月＝通貨膨脹＋重分配），用白話寫給志工看 */
 function syncFixed(){
   const c=S.cfg, r=S.round, out=[];
   if(!S.started || r<1 || r>c.rounds) return out;
@@ -1083,18 +1091,20 @@ function syncFixed(){
     brief:'有 2 個以上帳戶的人免執行。少於 2 個帳戶＝月光族，從這個月起每到月底，把他手上現金與生活帳戶剩下的錢全部收回。'});
   if(r===c.stressMonth) out.push({id:'stress',title:'壓力事件・報復性消費',
     brief:`向每一位收 ${fm(c.stressCost)}。娛樂帳戶每存 ${fm(c.funPer)} 可以抵 ${fm(c.funCover)}；存滿 ${fm(c.funPer*3)} 就全額抵銷、不用付。`});
+  if(r===c.inflationMonth) out.push({id:'inflation',title:'通貨膨脹',
+    brief:`從下個月開始，每個月的固定支出永久增加 ${fm(c.inflationExtra)}。這個月不用多收錢。`});
   if(r===c.marryMonth) out.push({id:'marry',title:'結婚生子',
-    brief:`從下個月開始，每個月的固定支出永久增加 ${fm(c.marryExtra)}（變成 ${fm(c.expense+c.marryExtra)}）。這個月不用多收錢。`});
+    brief:`從下個月開始，每個月的固定支出永久增加 ${fm(c.marryExtra)}。這個月不用多收錢。`});
   if(r===c.knowMonth) out.push({id:'know',title:'知識變現',
     brief:'學習帳戶每 1,000 可以 1 比 1 換成「每月固定收入」。學員說要換多少，就從學習帳戶收走多少，之後每個月多發同樣的錢給他。'});
-  if(r===c.joblessMonth) out.push({id:'jobless',title:'失業／公司倒閉通知',
-    brief:`第 ${c.joblessMonth+1}、${c.joblessMonth+2} 月停發薪水（投資的被動收入照領）。儲蓄帳戶每付 ${fm(c.joblessSaveCost)} 可以免付當月的固定支出。`});
+  if(r===c.joblessMonth) out.push({id:'jobless',title:'失業／公司倒閉',
+    brief:`第 ${c.joblessMonth}、${c.joblessMonth+c.joblessLen-1} 月停發薪水（投資的被動收入照領）。儲蓄帳戶每付 ${fm(c.joblessSaveCost)} 可以免付當月的固定支出。`});
   if(r===c.charityMonth) out.push({id:'charity',title:'公益勸募',
-    brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位，從貢獻帳戶出。務必記下每個人捐了多少，後面會用到。`});
+    brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位。從貢獻帳戶捐的算 ${c.giveBoost} 倍捐款額，用其他的錢捐算 1 比 1。務必記下每個人的捐款額，第 ${c.accidentMonth} 月會用到。`});
   if(r===c.accidentMonth) out.push({id:'accident',title:'重大事故',
-    brief:`向每一位收 ${fm(c.accidentCost)}。之前每捐過 ${fm(c.charityUnit)}，就有貴人相助保留 ${fm(c.charityCover)}；捐滿 ${fm(c.charityUnit*3)} 全額保住、不用付。`});
+    brief:`向每一位收 ${fm(c.accidentCost)}。捐款額每 ${fm(c.charityUnit)} 就有貴人相助保留 ${fm(c.charityCover)}；從貢獻帳戶捐過 ${fm(c.charityUnit)} 的人就全額保住、不用付。`});
   if(r===c.reallocA || r===c.reallocB) out.push({id:'realloc',title:'預算重分配窗口',
-    brief:`可以重新調整六個帳戶的分配比例與已經存進去的錢。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費`:'這次免費'}。`});
+    brief:`可以重新調整六個帳戶的分配比例與已經存進去的錢。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費，用學習帳戶的錢付只要 ${fm(c.unlockFeeLearn)}`:'這次免費'}。`});
   return out;
 }
 /* 「現在這一步要做什麼」——副控畫面正中央那句話 */
@@ -1125,8 +1135,10 @@ function buildSyncState(){
     fun:{ per:c.funPer, cover:c.funCover },
     /* 志工端算錢會用到的參數：講師若在 ⚙ 設定裡臨場改了數字，副控台會跟著變 */
     nums:{ stressCost:c.stressCost, marryExtra:c.marryExtra, knowUnit:1000,
+           inflationExtra:c.inflationExtra, giveBoost:c.giveBoost,
            joblessSaveCost:c.joblessSaveCost, charityUnit:c.charityUnit,
-           charityCover:c.charityCover, accidentCost:c.accidentCost, unlockFee:c.unlockFee },
+           charityCover:c.charityCover, accidentCost:c.accidentCost,
+           unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn },
     todo:syncTodo(), fixed:syncFixed(),
     card:(S.phase==='drawn'||S.phase==='expense') ? syncFace(S.recap[S.round]) : null,
     settle:syncSettle() };
@@ -1341,18 +1353,17 @@ function dLiquid(){ const x=d(); return ACCS.reduce((s,k)=>s+x.acc[k],0)+x.pocke
 function dAllocCount(){ return ACCS.filter(k=>d().alloc[k]>0).length; }
 function dAllocZero(){ return dAllocCount()===0; }
 function curExpense(){ return S.cfg.expense + (S.expenseBonus||0); }   /* 含結婚生子後的月支出 */
-function isJobless(r){ const c=S.cfg; return S.started && r>c.joblessMonth && r<=c.joblessMonth+c.joblessLen; }  /* 第 7、8 月停薪 */
+/* joblessMonth＝停薪的第一個月（失業卡在該月一開始就翻出來），連停 joblessLen 個月＝第 5、6 月 */
+function isJobless(r){ const c=S.cfg; return S.started && r>=c.joblessMonth && r<c.joblessMonth+c.joblessLen; }
 function dCashflow(){
   const x=d();
   const act = isJobless(S.round)?0:(x.income+x.extra);
   return act + x.passive - curExpense() - Math.round(x.loan*S.cfg.loanRate);
 }
-/* 借款上限＝月總收入（主動＋其他＋被動）×10。看總收入而不是扣完支出的淨現金流，
-   學員才有空間借錢去投資；失業月主動與其他收入停發，上限自然縮到只剩被動收入 ×10。 */
+/* 借款上限＝每月淨現金流 ×10（規則書寫的就是這個）。現金流被利息吃光的人借不到更多，
+   這正是要教的事：先把現金流做正，才有借力的資格。 */
 function loanCap(){
-  const x=d();
-  const act = isJobless(S.round)?0:(x.income+x.extra);
-  return (act + x.passive) * S.cfg.loanCapX;
+  return Math.max(0, dCashflow()) * S.cfg.loanCapX;
 }
 function dLog(msg,cls){
   d().log.unshift({m:S.round, t:msg, c:cls||''});
@@ -1383,7 +1394,7 @@ function payChain(amt,label,borrow){
     const change=borrowAmt-need;
     if(change>0){ x.acc.life+=change; x.ain.life+=change; }
     dLog(`${label}不足 → 銀行借款 ${fm(borrowAmt)}（${units} 個 1 萬單位，月息 ${Math.round(S.cfg.loanRate*100)}%）`,'warn');
-    if(over) dLog(`⚠ 負債 ${fm(x.loan)} 已超過借款上限（月總收入 ×${S.cfg.loanCapX}＝${fm(loanCap())}）`,'warn');
+    if(over) dLog(`⚠ 負債 ${fm(x.loan)} 已超過借款上限（月淨現金流 ×${S.cfg.loanCapX}＝${fm(loanCap())}）`,'warn');
     need=0;
   }
   return 0;
@@ -1411,7 +1422,7 @@ function demoAllocate(){
   if(allocated>0) dLog(`分配完成：入帳 ${fm(allocated)}、現金 ${fm(inc-allocated)}`);
   else dLog(`沒有分配計畫，${fm(inc)} 全放身上（現金）`);
 }
-/* 繳生活費＋貸款利息＋自動清償；失業月儲蓄 6,000 可抵當月生活費 */
+/* 繳生活費＋貸款利息＋自動清償；停薪月用儲蓄帳戶付 joblessSaveCost 就免付當月固定支出 */
 function demoExpense(){
   const x=d(); if(!x.on) return;
   const cfg=S.cfg, exp=curExpense();
@@ -1493,24 +1504,32 @@ function demoStress(){
 }
 function demoKnowledge(){
   const x=d(); if(!x.on) return;
-  const units=Math.floor(x.acc.learn/S.cfg.charityUnit);   /* 每 1,000 為單位 */
-  const amt=units*S.cfg.charityUnit;
+  const units=Math.floor(x.acc.learn/1000);   /* 每 1,000 為單位 */
+  const amt=units*1000;
   if(amt>0){
     x.acc.learn-=amt; x.extra+=amt;
     dLog(`知識變現：學習帳戶 ${fm(amt)} 以 1:1 轉為每月固定收入（其他收入 +${fm(amt)}/月）`,'goodl');
   }else dLog('知識變現：學習帳戶不足 1,000，收入原地踏步','warn');
 }
-function demoDonate(amt){
+/* 公益捐贈。src='give' 從貢獻帳戶出，每 1,000 記 10,000 捐款額（giveBoost）；
+   src='cash' 從其他錢出，1:1 計。記的是「捐款額」，重大事故時換保留額用。 */
+function demoDonate(amt, src){
   const x=d(); if(!x.on) return;
-  amt=Math.min(amt, x.acc.give);
-  amt=Math.floor(amt/S.cfg.charityUnit)*S.cfg.charityUnit;
-  if(amt<=0){ toast('貢獻帳戶不足 1,000，捐不出去'); return; }
+  const cfg=S.cfg, fromGive = src!=='cash';
+  if(fromGive) amt=Math.min(amt, x.acc.give);
+  amt=Math.floor(amt/cfg.charityUnit)*cfg.charityUnit;
+  if(amt<=0){ toast(fromGive?'貢獻帳戶不足 1,000，捐不出去':'金額不足 1,000'); return; }
+  if(!fromGive && dLiquid()<amt){ toast('身上的錢不夠捐'); return; }
   pushUndo();
-  x.acc.give-=amt; x.donated+=amt;
-  dLog(`公益捐贈 ${fm(amt)}（累計 ${fm(x.donated)}）——善意已種下`,'goodl');
+  const credit = fromGive ? amt*cfg.giveBoost : amt;
+  if(fromGive) x.acc.give-=amt; else payChain(amt,'公益捐贈',false);
+  x.donated+=credit;
+  dLog(fromGive
+    ? `公益捐贈：貢獻帳戶 ${fm(amt)} ×${cfg.giveBoost} ＝ 捐款額 ${fm(credit)}（累計 ${fm(x.donated)}）`
+    : `公益捐贈 ${fm(amt)}（現金捐，1:1；累計 ${fm(x.donated)}）`,'goodl');
   play('good'); save();
   const el=$('#charityDemo');
-  if(el) el.innerHTML=`<b class="hl">已捐 ${fm(x.donated)}</b>・重大事故時可保留 ${fm(Math.floor(x.donated/S.cfg.charityUnit)*S.cfg.charityCover)} 支出`;
+  if(el) el.innerHTML=`<b class="hl">捐款額 ${fm(x.donated)}</b>・重大事故時可保留 ${fm(Math.floor(x.donated/S.cfg.charityUnit)*S.cfg.charityCover)} 支出`;
 }
 function demoAccident(){
   const x=d(); if(!x.on) return;
@@ -1521,7 +1540,26 @@ function demoAccident(){
   if(rest>0){ dLog(`重大事故：仍須自行支付 ${fm(rest)}`,'warn'); payChain(rest,'重大事故'); }
   else dLog('重大事故：貴人全額相助，安然度過！','goodl');
 }
-/* ── 投資（單位制） ── */
+/* ── 投資（單位制） ──
+   開牌倍數是四選一。抽的時機＝翻牌那一刻（存進 pend.gm），不是開牌那一刻——
+   這樣講師按「上一步」再走一次，開出來的還是同一個數，不會變成可以重抽的樂透。
+   底牌不外洩：封包只有到了該開牌的月份才會帶上換算後的金額（見 syncSettle）。 */
+function pickGm(c){
+  const g=(c&&c.gms&&c.gms.length)?c.gms:[0];
+  return g[Math.floor(Math.random()*g.length)];
+}
+function gmOf(p){
+  if(p.gm===undefined) p.gm=pickGm(CAT[p.id]);
+  return p.gm;
+}
+/* 開牌賠錢＝先掏投資帳戶（投資的事只能用投資的錢），掏不夠才依序動用其他帳戶、最後被迫負債 */
+function payFromInvest(amt,label){
+  const x=d();
+  const use=Math.min(x.acc.invest, Math.round(amt));
+  if(use>0){ x.acc.invest-=use; dLog(`${label}：投資帳戶支付 ${fm(use)}`,'warn'); }
+  const rest=Math.round(amt)-use;
+  if(rest>0){ dLog(`${label}：投資帳戶不夠，還差 ${fm(rest)}`,'warn'); payChain(rest,label); }
+}
 function demoInvest(pend, units){
   const x=d(); if(!x.on) return false;
   const card=CAT[pend.id], amt=units*card.unit;
@@ -1530,8 +1568,8 @@ function demoInvest(pend, units){
   x.acc.invest-=amt;
   pend.demoAmt=amt; pend.demoUnits=units;
   x.holds.push({id:pend.id, amt});
-  if(card.cf>0 && !card.addCf) x.passive+=card.cf*units;   /* 高股息/租金類：次月起配息；天使輪開牌前不配 */
-  dLog(`投入 ${units} 單位＝${fm(amt)} 於「${card.title}」${card.nosettle?'':`，第 ${pend.due} 月開牌`}${card.cf>0&&!card.addCf?`；每月現金流 +${fm(card.cf*units)}`:''}`,'goodl');
+  if(card.cf>0) x.passive+=card.cf*units;   /* 有配息的卡一律次月起配（天使輪＝投入金額的 5%） */
+  dLog(`投入 ${units} 單位＝${fm(amt)} 於「${card.title}」${card.nosettle?'':`，第 ${pend.due} 月開牌`}${card.cf>0?`；每月現金流 +${fm(card.cf*units)}`:''}`,'goodl');
   play('coin');
   return true;
 }
@@ -1540,20 +1578,27 @@ function removeHold(id,amt){
   const i=x.holds.findIndex(h=>h.id===id&&h.amt===amt);
   if(i>=0) x.holds.splice(i,1);
 }
+/* 本金會不會歸零：股災②一定歸零；創業只有抽到負數才失敗 */
+function settleWipes(card,gm){ return !!card.dead || (card.failIfNeg && gm<0); }
 function demoSettle(pend){
   const x=d(); if(!x.on||!pend.demoAmt) return;
   const card=CAT[pend.id], amt=pend.demoAmt, units=pend.demoUnits||Math.round(amt/card.unit);
-  if(card.dead){
+  const gm=gmOf(pend), pct=Math.round(gm*100);
+  if(settleWipes(card,gm)){
     removeHold(pend.id,amt);
-    dLog(`投資結算「${card.title}」：血本無歸——${fm(amt)} 本金歸零`,'warn');
+    /* 股災②抽到負數：本金歸零之外還要追繳。創業失敗只是歸零，不追繳，配息也不給 */
+    const owe = (card.dead && gm<0) ? Math.round(amt*-gm) : 0;
+    dLog(`投資結算「${card.title}」開牌 ${pct}%：本金 ${fm(amt)} 歸零${owe?`，另追繳 ${fm(owe)}`:''}`,'warn');
+    if(owe) payFromInvest(owe, `${card.title}・追繳虧損`);
+    if(card.cf>0) x.passive=Math.max(0, x.passive-card.cf*units);   /* 標的沒了，配息跟著停 */
     return;
   }
-  const bonus=amt*card.gm;
+  const bonus=Math.round(amt*gm);
   if(bonus>0){ x.acc.invest+=bonus; x.ain.invest+=bonus; }
   if(card.back){ removeHold(pend.id,amt); x.acc.invest+=amt; x.ain.invest+=amt; }
   if(card.addCf){ x.passive+=card.addCf*units; }
   if(card.extraCf){ x.extra+=card.extraCf*units; }
-  dLog(`投資結算「${card.title}」：${fm(amt)} 開牌 ×${card.gm} ＝收益 ${fm(bonus)}${card.back?'＋本金領回':''}${card.addCf?`；被動 +${fm(card.addCf*units)}/月`:''}${card.extraCf?`；其他收入 +${fm(card.extraCf*units)}/月`:''}`, (bonus>0||card.back)?'goodl':'warn');
+  dLog(`投資結算「${card.title}」：${fm(amt)} 開牌 ${pct>0?'+':''}${pct}% ＝收益 ${fm(bonus)}${card.back?'＋本金領回':''}${card.addCf?`；被動 +${fm(card.addCf*units)}/月`:''}${card.extraCf?`；其他收入 +${fm(card.extraCf*units)}/月`:''}`, (bonus>0||card.back)?'goodl':'warn');
 }
 function demoRepayLoan(){
   const x=d();
@@ -1596,15 +1641,8 @@ function mainAction(){
   else if(ph==='allocate'){ pushUndo(); S.phase='event'; }
   else if(ph==='event'){ drawEvent(); return; }
   else if(ph==='drawn'){
+    /* 失業卡已改在停薪第一個月（第 5 月）一開始就翻出來，見 nextRound 的 onAllClosed */
     pushUndo();
-    if(S.round===S.cfg.joblessMonth){
-      /* 第 6 月：失業通知在「繳固定支出」之前開牌；關掉通知後才進固定支出 */
-      queueOverlay(()=>{ play('boom'); openOverlay(joblessHTML(), true); });
-      onAllClosed = ()=>{ demoExpense(); S.phase='expense'; play('expense'); save(); renderAll(); };
-      save(); renderAll();
-      if(!overlayOpen) nextOverlay();
-      return;
-    }
     demoExpense(); S.phase='expense'; play('expense');
   }
   else if(ph==='expense'){ nextRound(); return; }
@@ -1621,7 +1659,7 @@ function drawEvent(){
   S.recap[S.round]=id;
   const c=CAT[id];
   if(c.kind==='inv')
-    S.pend.push({due:S.round+S.cfg.settleAfter, id, demoAmt:0, demoUnits:0, nosettle:!!c.nosettle});
+    S.pend.push({due:S.round+S.cfg.settleAfter, id, demoAmt:0, demoUnits:0, nosettle:!!c.nosettle, gm:pickGm(c)});
   else demoEvent(c);
   if(c.kind==='bigspend') play('boom');
   else if(c.kind==='good') play('good');
@@ -1644,11 +1682,15 @@ function nextRound(){
   /* ── v4 月底固定事件（依月份） ── */
   if(r===cfg.mindlessMonth){ S.mindlessOn=true; queueOverlay(()=>{ play('expense'); openOverlay(mindlessHTML(), true); }); }
   if(r===cfg.stressMonth){ demoStress(); queueOverlay(()=>{ play('alarm'); openOverlay(stressHTML(), true); }); }
+  /* 第 4 月：先漲支出（通膨）再開重分配窗口，學員才是帶著變糟的數字去調比例 */
+  if(r===cfg.inflationMonth){ S.expenseBonus+=cfg.inflationExtra;
+    if(d().on) dLog(`通貨膨脹：固定支出從此每月 +${fm(cfg.inflationExtra)}（現在 ${fm(curExpense())}/月）`,'warn');
+    queueOverlay(()=>{ play('expense'); openOverlay(inflationHTML(), true); }); }
   if(r===cfg.marryMonth){ S.expenseBonus+=cfg.marryExtra;
     if(d().on) dLog(`結婚生子：固定支出從此每月 +${fm(cfg.marryExtra)}（現在 ${fm(curExpense())}/月）`,'warn');
     queueOverlay(()=>{ play('good'); openOverlay(marryHTML(), true); }); }
   if(r===cfg.knowMonth){ demoKnowledge(); queueOverlay(()=>{ play('fanfare'); openOverlay(knowledgeHTML(r), true); }); }
-  /* 失業通知已移到第 6 月「繳固定支出」之前（見 mainAction drawn 分支），此處不再重複 */
+  /* 失業通知改在停薪第一個月的月初翻出來（見下方 onAllClosed），此處不再重複 */
   if(r===cfg.charityMonth){ queueOverlay(()=>{ play('good'); openOverlay(charityHTML()); }); }
   if(r===cfg.accidentMonth){ demoAccident(); queueOverlay(()=>{ play('boom'); openOverlay(accidentHTML(), true); }); }
   demoMonthEnd(); demoSnap();
@@ -1656,6 +1698,8 @@ function nextRound(){
   onAllClosed = ()=>{
     if(r>=cfg.rounds){ S.round=cfg.rounds+1; save(); showFinal(); return; }
     S.round=r+1; S.phase='salary';
+    /* 停薪第一個月：失業卡在發薪之前先翻出來，這個月的薪水本來就不會發 */
+    if(S.round===cfg.joblessMonth) queueOverlay(()=>{ play('boom'); openOverlay(joblessHTML(), true); });
     demoSalary();
     S.pend.filter(p=>p.due===S.round && !p.nosettle).forEach(p=>{
       demoSettle(p);
@@ -1822,12 +1866,21 @@ function stressHTML(){
   ), QUOTES.stress);
 }
 function marryHTML(){
-  const cfg=S.cfg;
+  const cfg=S.cfg, now=curExpense(), was=now-cfg.marryExtra;   /* 呼叫時支出已經加上去了 */
   const c=fixShell('固定事件・第 '+cfg.marryMonth+' 月','結婚生子','人生邁入新階段——組建家庭、迎接新生命。幸福無價，但生活成本從此永久上升。','#E8C98F');
   return cardShell(c, `<div class="moneybig">
     <div class="amt minus num">每月 −${fm(cfg.marryExtra)}</div>
-    <div class="note">全班的<b>固定支出從此永久上升</b>：${fm(cfg.expense)} → <b style="color:var(--brick)">${fm(cfg.expense+cfg.marryExtra)}</b>／月，往後每一輪都要多繳。</div>
+    <div class="note">全班的<b>固定支出從此永久上升</b>：${fm(was)} → <b style="color:var(--brick)">${fm(now)}</b>／月，往後每一輪都要多繳。</div>
   </div>`, '真正的財務韌性，是連幸福的重量都扛得起。');
+}
+function inflationHTML(){
+  const cfg=S.cfg, now=curExpense(), was=now-cfg.inflationExtra;
+  const c=fixShell('固定事件・第 '+cfg.inflationMonth+' 月','通貨膨脹',
+    '主計總處公布最新物價指數：外食、房租、水電同步調漲。薪水沒動，但每一樣東西都變貴了。','#E8C98F');
+  return cardShell(c, `<div class="moneybig">
+    <div class="amt minus num">每月 −${fm(cfg.inflationExtra)}</div>
+    <div class="note">全班的<b>固定支出從此永久上升</b>：${fm(was)} → <b style="color:var(--brick)">${fm(now)}</b>／月，往後每一輪都要多繳。</div>
+  </div>`, '你的薪水沒有變少，是錢變薄了——這就是為什麼光存錢不夠。');
 }
 function knowledgeHTML(r){
   const c=fixShell('固定事件・第 '+r+' 月','知識變現','投資在腦袋的錢，市場開始買單——系統開始檢測你的【學習帳戶】。','#DDBE6C');
@@ -1847,40 +1900,49 @@ function knowledgeHTML(r){
 }
 function joblessHTML(){
   const cfg=S.cfg;
-  const from=cfg.joblessMonth+1, to=cfg.joblessMonth+cfg.joblessLen;
-  const c=fixShell('固定事件・第 '+cfg.joblessMonth+' 月','失業／公司倒閉','公司無預警宣布結束營業。下兩個月，你將沒有薪資收入——被動收入照領。','#C96A5B');
+  const from=cfg.joblessMonth, to=cfg.joblessMonth+cfg.joblessLen-1;
+  const c=fixShell('固定事件・第 '+cfg.joblessMonth+' 月','失業／公司倒閉','公司今天無預警宣布結束營業。從這個月起連續兩個月，你沒有薪資收入——投資的被動收入照領。','#C96A5B');
   return cardShell(c, branches(
     '平時有存儲蓄帳戶',[
       `第 ${from}、${to} 月<b class="hl">停發薪資與其他收入</b>（被動收入照領）`,
       `儲蓄帳戶每支付 <b class="hl">${fm(cfg.joblessSaveCost)}</b> ＝ 順利度過一個月（<b class="hl">免付當月固定支出</b>）`,
       '過去準備的緊急備用金，此刻發揮效益'],
     '儲蓄帳戶空空',[
-      `第 ${from}、${to} 月沒有薪水進帳`,
+      `第 ${from}、${to} 月都沒有薪水進帳`,
       `固定支出 <b class="hl">照付</b>——從生活帳戶、其他帳戶依序支付`,
       `再不夠 → 銀行借款（1 萬為單位、月息 ${Math.round(cfg.loanRate*100)}%）`]
   ), QUOTES.jobless);
 }
 function charityHTML(){
   const cfg=S.cfg;
-  const c=fixShell('固定事件・第 '+cfg.charityMonth+' 月','公益勸募・視界友善基金會','「視界友善基金會」正在為弱勢兒童的教育與照顧勸募。每 '+fm(cfg.charityUnit)+' 元為一個單位，自由捐贈——也可以不捐。','#93AC87');
+  const c=fixShell('固定事件・第 '+cfg.charityMonth+' 月','公益勸募・視界友善基金會','「視界友善基金會」正在為弱勢兒童的課後照顧與助學勸募。每 '+fm(cfg.charityUnit)+' 元為一個單位，自由捐贈——也可以不捐。','#93AC87');
   const demoCtl = d().on ? `<div class="demoinvest" style="margin-top:14px" id="charityBtns">
       <button onclick="closeOverlay()">示範學員：不捐</button>
-      <button onclick="demoDonate(${cfg.charityUnit})" ${d().acc.give<cfg.charityUnit?'disabled':''}>捐 ${fm(cfg.charityUnit)}</button>
-      <button onclick="demoDonate(${cfg.charityUnit*3})" ${d().acc.give<cfg.charityUnit*3?'disabled':''}>捐 ${fm(cfg.charityUnit*3)}</button>
-      <button onclick="demoDonate(d().acc.give)" ${d().acc.give<cfg.charityUnit?'disabled':''}>貢獻帳戶全捐（${fm(d().acc.give)}）</button>
+      <button onclick="demoDonate(${cfg.charityUnit},'give')" ${d().acc.give<cfg.charityUnit?'disabled':''}>貢獻帳戶捐 ${fm(cfg.charityUnit)}</button>
+      <button onclick="demoDonate(d().acc.give,'give')" ${d().acc.give<cfg.charityUnit?'disabled':''}>貢獻帳戶全捐（${fm(d().acc.give)}）</button>
+      <button onclick="demoDonate(${cfg.charityUnit},'cash')">用現金捐 ${fm(cfg.charityUnit)}</button>
     </div><div style="text-align:center;font-size:14px;margin-top:8px" id="charityDemo"></div>`:'';
   return cardShell(c, `<div class="moneybig">
     <div class="amt plus" style="font-size:44px">💝 自由捐贈</div>
-  </div>${demoCtl}`, QUOTES.charity);
+  </div>
+  ${branches('從貢獻帳戶捐',[
+      `每 <b class="hl">${fm(cfg.charityUnit)}</b> 記成 <b class="hl">${fm(cfg.charityUnit*cfg.giveBoost)}</b> 捐款額（${cfg.giveBoost} 倍）`,
+      '平時有專款專用的人，善意被放大',
+      '捐款額請記下來，第 '+cfg.accidentMonth+' 月會用到'],
+    '從其他的錢捐',[
+      `捐多少記多少（1:1），捐 ${fm(cfg.charityUnit)} 就是 ${fm(cfg.charityUnit)}`,
+      '沒有貢獻帳戶也可以捐，只是換算比較吃虧',
+      '也完全可以不捐——這是你的選擇'])}
+  ${demoCtl}`, QUOTES.charity);
 }
 function accidentHTML(){
   const cfg=S.cfg;
   const c=fixShell('固定事件・第 '+cfg.accidentMonth+' 月','重大事故','一場重大事故從天而降，需要支付 '+fm(cfg.accidentCost)+' 元。這時你才知道，平時種下的善意值多少。','#C96A5B');
   return cardShell(c, branches(
     '曾在公益事件捐贈',[
-      `每捐贈過 <b class="hl">${fm(cfg.charityUnit)}</b> ＝ 貴人相助<b class="hl">保留 ${fm(cfg.charityCover)}</b> 支出`,
-      `捐滿 ${fm(cfg.charityUnit*3)} → <b class="hl">${fm(cfg.accidentCost)} 全額保住</b>`,
-      '不足的差額，依序從各帳戶支付'],
+      `捐款額每 <b class="hl">${fm(cfg.charityUnit)}</b> ＝ 貴人相助<b class="hl">保留 ${fm(cfg.charityCover)}</b> 支出`,
+      `從貢獻帳戶捐 ${fm(cfg.charityUnit)}（記 ${fm(cfg.charityUnit*cfg.giveBoost)}）→ <b class="hl">${fm(cfg.accidentCost)} 全額保住</b>`,
+      `用現金捐的人要捐滿 ${fm(Math.ceil(cfg.accidentCost/cfg.charityCover)*cfg.charityUnit)} 才全額保住`],
     '一毛都沒捐',[
       '無人伸出援手',
       `<b class="hl">全額支付 ${fm(cfg.accidentCost)}</b>，依序扣光各帳戶`,
@@ -1895,42 +1957,57 @@ function reallocHTML(r){
     <div style="font-size:16.5px;line-height:2.1;max-width:560px;margin:0 auto">
       ${unlocked
         ? '・<b style="color:var(--green)">已解鎖・本次免費調整</b>——學以致用，把前幾個月的教訓放進新的比例。'
-        : `・<b>第一次調整需支付學習費 ${fm(cfg.unlockFee)}</b>，有機會得到市場消息；<br>&nbsp;&nbsp;之後觸發事件時調整<b>無需付費</b>。`}<br>
+        : `・<b>第一次調整需支付學習費 ${fm(cfg.unlockFee)}</b>，有機會得到市場消息；<br>
+&nbsp;&nbsp;・<b style="color:var(--gold-deep)">用「學習帳戶」的錢付，只要 ${fm(cfg.unlockFeeLearn)}</b>——平時有投資自己的人，學費打了兩折；<br>
+&nbsp;&nbsp;・之後觸發事件時調整<b>無需付費</b>。`}<br>
       ・想清楚：這幾個月，哪個帳戶救過你？哪個帳戶空著讓你痛過？
     </div>
     <div class="formfoot">
-      ${!unlocked?`<button class="ctl" style="border-color:var(--gold);color:var(--gold-deep)" onclick="unlockBudget()">付 ${fm(cfg.unlockFee)} 解鎖調整</button>`:''}
+      ${!unlocked?`<button class="ctl" style="border-color:var(--gold);color:var(--gold-deep)" onclick="unlockBudget(true)">用學習帳戶付 ${fm(cfg.unlockFeeLearn)}</button>
+      <button class="ctl" onclick="unlockBudget(false)">付 ${fm(cfg.unlockFee)} 解鎖調整</button>`:''}
       ${d().on?'<button class="ctl" onclick="event.stopPropagation();closeOverlay();toggleDrawer(true)">調整示範學員</button>':''}
       <button class="ctl primary" onclick="closeOverlay()">全班調整完畢，繼續</button>
     </div>
   </div>`;
 }
-function unlockBudget(){
+function unlockBudget(useLearn){
   if(S.budgetUnlocked) return;
+  const cfg=S.cfg, fee = useLearn ? cfg.unlockFeeLearn : cfg.unlockFee;
+  /* 先檢查再 pushUndo，否則按了付不出來也會留一筆空的復原點 */
+  if(useLearn && d().on && d().acc.learn<fee){ toast(`學習帳戶不足 ${fm(fee)}，請改用一般價 ${fm(cfg.unlockFee)}`); return; }
   pushUndo();
   S.budgetUnlocked=true;
-  if(d().on){ payChain(S.cfg.unlockFee,'預算解鎖學習費'); }
+  if(d().on){
+    if(useLearn){ d().acc.learn-=fee; dLog(`預算解鎖：學習帳戶支付 ${fm(fee)}（平時有投資自己，學費打兩折）`,'goodl'); }
+    else payChain(fee,'預算解鎖學習費');
+  }
   save();
   const panel=$('#overlay .panel');
   if(panel) panel.innerHTML=reallocHTML(S.round);
   renderStrip();
-  toast(`已付 ${fm(S.cfg.unlockFee)} 解鎖，之後的重分配窗口免費`);
+  toast(`已付 ${fm(fee)} 解鎖，之後的重分配窗口免費`);
 }
 function settleHTML(p){
   const c=CAT[p.id];
   const invested = p.demoAmt>0;
+  const gm=gmOf(p), pct=Math.round(gm*100), wipe=settleWipes(c,gm);
+  const owePer = (c.dead && gm<0) ? Math.round(c.unit*-gm) : 0;
   let revealBig, revealSub;
-  if(c.dead){ revealBig='×0'; revealSub='<b>血本無歸——本金歸零</b>'; }
-  else{
-    revealBig='+'+c.gm+' 倍';
-    revealSub=`每單位收益 <b>${fm(c.unit*c.gm)}</b>${c.back?'＋<b>本金領回</b>':'・本金續留資產'}`+
+  if(wipe){
+    revealBig = (pct>0?'+':'')+pct+'%';
+    revealSub = owePer
+      ? `<b>本金歸零，每單位還要再賠 ${fm(owePer)}</b>——先從投資帳戶掏，不夠就依序動用其他帳戶，再不夠只能跟銀行借`
+      : (c.dead?'<b>本金歸零，但至少不用再賠</b>':'<b>創業失敗——本金歸零，也沒有現金流</b>');
+  }else{
+    revealBig=(pct>0?'+':'')+pct+'%';
+    revealSub=`每單位收益 <b>${fm(Math.round(c.unit*gm))}</b>${c.back?'＋<b>本金領回</b>':'・本金續留資產'}`+
       (c.addCf?`＋每月被動 <b>+${fm(c.addCf)}/單位</b>`:'')+
       (c.extraCf?`＋每月現金流 <b>+${fm(c.extraCf)}/單位</b>（非被動）`:'')+
-      (c.cf>0&&!c.addCf?`・配息 <b>+${fm(c.cf)}/單位/月</b> 續領`:'');
+      (c.cf>0?`・配息 <b>+${fm(c.cf)}/單位/月</b> 續領`:'');
   }
   const units=p.demoUnits>0?p.demoUnits:0;
   const demoLine = (d().on && invested)
-    ? `<div class="demoline">示範學員：投入 ${units} 單位＝${fm(p.demoAmt)} → ${c.dead?'<b style="color:var(--brick)">本金歸零</b>':`收益 <b>${fm(p.demoAmt*c.gm)}</b>${c.back?'＋領回本金 '+fm(p.demoAmt):''}${c.addCf?'・被動 +'+fm(c.addCf*units)+'/月':''}${c.extraCf?'・現金流 +'+fm(c.extraCf*units)+'/月':''}`}</div>`
+    ? `<div class="demoline">示範學員：投入 ${units} 單位＝${fm(p.demoAmt)} → ${wipe?`<b style="color:var(--brick)">本金歸零${owePer?'，追繳 '+fm(Math.round(p.demoAmt*-gm)):''}</b>`:`收益 <b>${fm(Math.round(p.demoAmt*gm))}</b>${c.back?'＋領回本金 '+fm(p.demoAmt):''}${c.addCf?'・被動 +'+fm(c.addCf*units)+'/月':''}${c.extraCf?'・現金流 +'+fm(c.extraCf*units)+'/月':''}`}</div>`
     : (d().on?'<div class="demoline" style="color:var(--ink-mute)">示範學員當時沒有投入。</div>':'');
   const shell={tag:'開牌時刻・投資結算',wash:'#DDBE6C',title:c.title,
     flavor:'兩個月前的決定，現在開牌。結果當場揭曉——當時投入的人，請看清楚這一刻。'};
@@ -2003,7 +2080,7 @@ function rulesHTML(i){
         </div>
         <p style="font-size:13px;color:var(--ink-mute);margin-top:8px">＊以上為帳戶分類舉例，還有其他可能性——可依自己的狀況調整。</p></div>
       <div class="rbox full"><h5><span class="ic">🏦</span>銀行借貸</h5>
-        <p>每 <b class="hl">1 萬</b>為單位、<b class="hl">月息 10%</b>（利息計入每月生活支出）；借款總額<b>不得超過每月總收入的 ${cfg.loanCapX} 倍</b>。</p></div>
+        <p>每 <b class="hl">1 萬</b>為單位、<b class="hl">月息 10%</b>（利息計入每月生活支出）；借款總額<b>不得超過每月現金流的 ${cfg.loanCapX} 倍</b>。</p></div>
     </div>
     ${nav('rulesNav(0)','closeOverlay()')}
   </div>`;
@@ -2311,9 +2388,11 @@ function openTimerPanel(){
 const SETTINGS=[
   ['income','月收入'],['expense','固定支出'],['rounds','總回合數'],
   ['settleAfter','投資開牌間隔(月)'],['stressCost','壓力事件消費額'],['joblessSaveCost','失業月儲蓄抵扣額'],
-  ['accidentCost','重大事故金額'],['charityCover','每捐1000保留額'],['marryExtra','結婚生子月增額'],
-  ['funPer','娛樂抵扣單位'],['funCover','娛樂每單位抵銷額'],['unlockFee','重分配首次學習費'],
-  ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(月收入倍數)'],
+  ['accidentCost','重大事故金額'],['charityCover','每捐1000保留額'],['giveBoost','貢獻帳戶捐款倍數'],
+  ['marryExtra','結婚生子月增額'],['inflationExtra','通貨膨脹月增額'],
+  ['funPer','娛樂抵扣單位'],['funCover','娛樂每單位抵銷額'],
+  ['unlockFee','重分配首次學習費'],['unlockFeeLearn','重分配・學習帳戶價'],
+  ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(月現金流倍數)'],
   ['timeBudgetMin','課堂時間預算(分)']
 ];
 function openSettings(){
@@ -2438,8 +2517,9 @@ function renderAxis(){
     const done=S.started&&(r<S.round||(S.round>cfg.rounds));
     const now=S.started&&r===S.round&&S.round<=cfg.rounds;
     let flag='';
-    const FIX={[cfg.mindlessMonth]:'🌙',[cfg.stressMonth]:'🌡',[cfg.marryMonth]:'💍',[cfg.knowMonth]:'★',
-      [cfg.joblessMonth]:'💼',[cfg.charityMonth]:'💝',[cfg.reallocB]:'↻',[cfg.accidentMonth]:'⚠'};
+    const FIX={[cfg.mindlessMonth]:'🌙',[cfg.stressMonth]:'🌡',[cfg.knowMonth]:'★',
+      [cfg.joblessMonth]:'💼',[cfg.charityMonth]:'💝',[cfg.accidentMonth]:'⚠',
+      [cfg.inflationMonth]:'💸',[cfg.marryMonth]:'💍'};
     if(S.pend.some(p=>p.due===r&&r>=S.round&&!p.nosettle)) flag='🚀';
     else if(FIX[r]) flag=FIX[r];
     h+=`<div class="tick ${done?'done':''} ${now?'now':''}" title="第 ${r} 月">
@@ -2637,16 +2717,22 @@ function renderSide(){
   const pendList=S.pend.filter(p=>p.due>=r && !p.nosettle && p.due<=cfg.rounds);
   const phaseIdx=PHASES.indexOf(S.phase);
   const step=(i,label)=>`<li class="${phaseIdx>i?'done':phaseIdx===i?'on':''}"><span class="dot">${phaseIdx>i?'✓':''}</span>${label}</li>`;
+  /* 同一個月可能有兩件固定事件（第 4 月＝通膨＋重分配、第 8 月＝結婚＋重分配），
+     這是用月份當鍵的物件，兩件事一定要寫在同一格，不然後面的會把前面的蓋掉 */
+  const reallocFee = S.budgetUnlocked ? '已解鎖・免費'
+    : `首次付 ${fm(cfg.unlockFee)}，用學習帳戶付只要 ${fm(cfg.unlockFeeLearn)}`;
   const FIXNOTE={
     [cfg.mindlessMonth]:'🌙 <b>本月月底</b>：無意識消費檢查——預算帳戶數 <2 者，從此每月底現金＋生活歸零！',
     [cfg.stressMonth]:`🌡 <b>本月月底</b>：壓力事件——報復性消費 ${fm(cfg.stressCost)}，娛樂每 ${fm(cfg.funPer)} 抵 ${fm(cfg.funCover)}！`,
-    [cfg.marryMonth]:`💍 <b>本月月底</b>：結婚生子——固定支出永久 +${fm(cfg.marryExtra)}；同月開放預算重分配（首次付 ${fm(cfg.unlockFee)}）`,
     [cfg.knowMonth]:'★ <b>本月月底</b>：知識變現——學習帳戶每 1,000 以 1:1 轉為每月固定收入！',
-    [cfg.joblessMonth]:`💼 <b>本月月底</b>：失業宣布——第 ${cfg.joblessMonth+1}、${cfg.joblessMonth+cfg.joblessLen} 月停薪（儲蓄每付 ${fm(cfg.joblessSaveCost)} 度過一個月）`,
-    [cfg.charityMonth]:'💝 <b>本月月底</b>：公益勸募——每 1,000 為單位自由捐贈（從貢獻帳戶）',
-    [cfg.reallocB]:'↻ <b>本月月底</b>：開放預算重分配（'+(S.budgetUnlocked?'已解鎖・免費':'首次付 '+fm(cfg.unlockFee))+'）',
-    [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——每捐過 1,000 保留 ${fm(cfg.charityCover)} 支出！`
+    [cfg.charityMonth]:`💝 <b>本月月底</b>：公益勸募——每 1,000 為單位自由捐贈；從貢獻帳戶捐算 ${cfg.giveBoost} 倍捐款額`,
+    [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——捐款額每 1,000 保留 ${fm(cfg.charityCover)} 支出！`,
+    [cfg.joblessMonth]:`💼 <b>本月起停薪</b>：第 ${cfg.joblessMonth}、${cfg.joblessMonth+cfg.joblessLen-1} 月沒有薪水（儲蓄每付 ${fm(cfg.joblessSaveCost)} 免付當月固定支出）`,
+    [cfg.inflationMonth]:`💸 <b>本月月底</b>：通貨膨脹——固定支出永久 +${fm(cfg.inflationExtra)}；接著開放預算重分配（${reallocFee}）`,
+    [cfg.marryMonth]:`💍 <b>本月月底</b>：結婚生子——固定支出永久 +${fm(cfg.marryExtra)}；接著開放預算重分配（${reallocFee}）`
   };
+  /* 重分配窗口若被設到沒有其他事件的月份，補一則獨立提示 */
+  [cfg.reallocA,cfg.reallocB].forEach(m=>{ if(!FIXNOTE[m]) FIXNOTE[m]=`↻ <b>本月月底</b>：開放預算重分配（${reallocFee}）`; });
   const jobless=isJobless(r);
   box.innerHTML=`
     <h4>本月流程</h4>
@@ -2665,7 +2751,7 @@ function renderSide(){
     ${pendList.map(p=>`<div class="notice gold"><span class="ic">🚀</span><span>「${CAT[p.id].title}」<b>第 ${p.due} 月開牌</b></span></div>`).join('')}
     ${d().on&&d().donated>0?`<div class="notice gold"><span class="ic">💝</span><span>示範學員累計捐贈 <b class="num">${fm(d().donated)}</b>（重大事故可保 ${fm(Math.floor(d().donated/cfg.charityUnit)*cfg.charityCover)}）</span></div>`:''}
     ${S.coop?`<div class="notice gold"><span class="ic">🤝</span><span><b>合作解鎖</b>：可合資湊單位，出資比例分成果。</span></div>`:''}
-    <div class="notice"><span class="ic">🏦</span><span><b>借貸</b>：每 1 萬為單位、月息 ${Math.round(cfg.loanRate*100)}%（計入生活支出）；上限＝月總收入 ×${cfg.loanCapX}。</span></div>`;
+    <div class="notice"><span class="ic">🏦</span><span><b>借貸</b>：每 1 萬為單位、月息 ${Math.round(cfg.loanRate*100)}%（計入生活支出）；上限＝月現金流 ×${cfg.loanCapX}。</span></div>`;
 }
 function renderControls(){
   const cfg=S.cfg;
@@ -2888,6 +2974,5 @@ renderAll();
 initGate();
 if(gateOK() && S.started && S.round<=S.cfg.rounds) toast(`已還原進度：第 ${S.round} 月`);
 </script>
-<div style="position:fixed;left:0;bottom:0;z-index:99999;background:#C96A5B;color:#fff;font:600 11px/1 system-ui,sans-serif;letter-spacing:.12em;padding:4px 8px;border-radius:0 6px 0 0;pointer-events:none;opacity:.85">BETA</div>
 </body>
 </html>
