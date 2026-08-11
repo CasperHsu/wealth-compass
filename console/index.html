@@ -1016,7 +1016,9 @@ function phFixed(X,r,f,fx,nm){
         let left=paid;
         const cutLoan=Math.min(X.loan[i],left); X.loan[i]-=cutLoan; left-=cutLoan;
         X.debt[i]=Math.max(0, X.debt[i]-left);
-        det.push(Object.assign(p,{amt:owe, owe, paid, left:p.short}));
+        /* amt＝「這一格實際要收多少」（不是名目欠款），不然志工會照著欠款去收、收成天價。
+           扣款來源改放 srcs，讓 subOf 統一寫成一句完整的話。 */
+        det.push({amt:paid, owe, paid, left:p.short, srcs:p.used||[], used:[], borrowed:0, short:0});
         elog(X,i,r, p.short<=0
           ? `銀行抽銀根：${fm(owe)} 全部還清，從這個月起不用再付利息`
           : `銀行抽銀根：${fm(owe)} 只還得出 ${fm(paid)}，還欠 ${fm(p.short)}`, p.short<=0?'good':'bad');
@@ -1275,12 +1277,20 @@ function fixedStep(f,r){
     case 'jobless':
       return Object.assign(base,{ mode:'info',
         why:'手上永遠留著緊急備用金，是你對抗無常的底氣。' });
-    case 'payoff':
-      return Object.assign(base,{ mode:'take', money:null,
+    case 'payoff': {
+      const stp=Object.assign(base,{ mode:'take', money:null,
         title:'銀行要求全數還款',
-        note:'每一格已經算好他名下欠多少、實際還得出多少、從哪些帳戶扣，照著收就好。'
-            +'還不出來的部分留著、不用再借，直接帶進結算。沒有欠款的人這一格會寫「不用付」。',
+        note:'格子上的大字＝這一位<b>實際要交出來的錢</b>（不是他欠的總額），照著收就好。'
+            +'還不出來的部分留著、不用再借，直接帶進結算。沒有欠款的人會寫「不用付」。',
         why:'借來的錢從來不是他的錢，只是還沒還的帳——這一刀就是要讓帳面誠實。' });
+      stp.subOf=(i)=>{
+        const D=detOf(stp,i);
+        if(!D || !D.owe) return '沒有欠款，不用收';
+        const src=(D.srcs&&D.srcs.length) ? D.srcs.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、') : '帳戶裡沒錢可收';
+        return `欠 ${fm(D.owe)}　→　從 ${src}` + (D.left>0 ? `　還欠 ${fm(D.left)}（帶進結算）` : '　全部還清');
+      };
+      return stp;
+    }
     case 'charity':
       return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, acct:'give', alsoCash:true,
         title:'公益勸募', money:null,
