@@ -806,17 +806,21 @@ const DEF = {
   stressMonth:3,  stressCost:30000,                  /* 壓力事件：報復性消費 3 萬 */
   funPer:2000, funCover:10000,                       /* 娛樂每 2,000 抵 10,000（壓力/大額消費共用） */
   inflationMonth:4, inflationExtra:5000,             /* 通貨膨脹：第 4 月「付固定支出之前」漲，當月就付新金額 */
-  joblessMonth:6, joblessLen:2, joblessSaveCost:10000,/* 第5月月底宣布、第6～7月停薪；儲蓄 10,000 抵當月固定支出 */
+  joblessMonth:6, joblessLen:2,                      /* 第5月月底宣布、第6～7月停薪 */
+  joblessSaveUnit:500, joblessSaveCover:5000,        /* 停薪月：儲蓄每 500 抵 5,000 生活費（1:10），系統自動抵到剛好夠 */
   charityMonth:6, charityUnit:1000, giveBoost:10,    /* 公益：每 1,000 為單位；從貢獻帳戶捐 1,000 記 10,000 */
-  knowMonth:7,                                       /* 知識變現：第 7 月「月初」；換到的是主動收入，停薪月不發、復工才開始領 */
+  knowMonth:7, knowUnit:10000,                       /* 知識變現：第 7 月「月初」；每 10,000 為單位（無條件捨去）；換到的是主動收入，停薪月不發、復工才開始領 */
   marryMonth:8,   marryExtra:5000,                   /* 結婚生子：第 8 月「付固定支出之前」漲，當月就付新金額 */
   accidentMonth:9, accidentCost:300000, charityCover:50000, /* 重大事故 30 萬；每捐 1,000 保留 5 萬 */
   reallocA:4, reallocB:8, unlockFee:2000, unlockFeeLearn:500, /* 重分配：第 4、8 月；首次 2,000，用學習帳戶付只要 500 */
+  payoffMonth:12,                                    /* 第 12 月「月初」：銀行要求全數還款，有多少還多少 */
   loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝每月淨現金流 10 倍 */
   timeBudgetMin:90,
   mvUrl:''
 };
 const ACCS  = ['life','fun','save','invest','learn','give'];
+/* 錢不夠時動用帳戶的順序（'pocket' ＝身上的現金） */
+const PAYORDER = ['pocket','life','invest','learn','save','fun','give'];
 const ANAME = {life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',give:'貢獻',pocket:'現金'};
 const PHASES = ['salary','allocate','event','drawn','expense'];
 
@@ -951,7 +955,7 @@ function newDemo(){
 }
 function newState(){
   const cfg = {...DEF};
-  return {v:9, cfg, round:0, phase:'salary', started:false,
+  return {v:10, cfg, round:0, phase:'salary', started:false,
     deck:buildDeck(cfg), recap:{}, pend:[], demo:newDemo(), muted:false, coop:false,
     expenseBonus:0, budgetUnlocked:false, mindlessOn:false, preFix:{},
     timer:{accumMs:0, runningSince:null}};
@@ -973,13 +977,13 @@ function buildDeck(cfg){
 
 /* ---------- 存檔／復原 ---------- */
 /* 規則改版就要換鍵：舊存檔的月份表與卡片數值都不一樣，讓它讀進新引擎會出怪事 */
-const LSKEY='zfl-compass-v9';
+const LSKEY='zfl-compass-v10';
 function save(){ try{ localStorage.setItem(LSKEY, JSON.stringify(S)); }catch(e){}
   try{ syncPush(); }catch(e){} }   /* 單機模式下 syncPush 直接 return，等同沒這行 */
 function load(){
   try{
     const s=JSON.parse(localStorage.getItem(LSKEY));
-    if(s && s.v===9){
+    if(s && s.v===10){
       if(!s.timer) s.timer={accumMs:0, runningSince: s.started?Date.now():null};
       if(!s.cfg.timeBudgetMin) s.cfg.timeBudgetMin=DEF.timeBudgetMin;
       if(!s.demo.holds) s.demo.holds=[];
@@ -1166,15 +1170,17 @@ function syncFixed(){
   if(r===c.marryMonth) out.push({id:'marry',title:'結婚生子',when:'preexp',
     brief:`固定支出從「這個月」起永久增加 ${fm(c.marryExtra)}。畫面上的生活費已經是新金額，照著收就好。`});
   if(r===c.knowMonth) out.push({id:'know',title:'知識變現',when:'pre',
-    brief:'學習帳戶每 1,000 可以 1 比 1 換成「每月固定收入」。學員說要換多少，就從學習帳戶收走多少，之後每個月多發同樣的錢給他。這筆算主動收入，停薪月跟薪水一起停，等復工才開始發。'});
+    brief:`學習帳戶每 ${fm(c.knowUnit)} 可以 1 比 1 換成「每月固定收入」，不足一個單位的捨去（例如學習帳戶 38,000 只能換 30,000）。學員說要換多少，就從學習帳戶收走多少，之後每個月多發同樣的錢給他。這筆算主動收入，停薪月跟薪水一起停，等復工才開始發。`});
   if(r===c.joblessMonth-1) out.push({id:'jobless',title:'失業／公司倒閉',
-    brief:`從下個月起連續 ${c.joblessLen} 個月（第 ${c.joblessMonth}、${c.joblessMonth+c.joblessLen-1} 月）停發主動收入——薪水與知識變現都停；投資的被動收入與其他現金流照領。儲蓄帳戶每付 ${fm(c.joblessSaveCost)} 可以免付當月的固定支出。`});
+    brief:`從下個月起連續 ${c.joblessLen} 個月（第 ${c.joblessMonth}、${c.joblessMonth+c.joblessLen-1} 月）停發主動收入——薪水與知識變現都停；投資的被動收入與其他現金流照領。儲蓄每 ${fm(c.joblessSaveUnit)} 可以抵 ${fm(c.joblessSaveCover)} 生活費（1 比 10），系統會自動抵到剛好夠、不會多扣；抵不完的差額照原本的順序從帳戶收。`});
+  if(r===c.payoffMonth) out.push({id:'payoff',title:'銀行要求全數還款',when:'pre',
+    brief:`銀行抽銀根：每一位名下所有的欠款這個月一次結清。每一格已經算好他實際還得出多少、從哪些帳戶扣，照著收就好；還不出來的部分留著，直接帶進結算。`});
   if(r===c.charityMonth) out.push({id:'charity',title:'公益勸募',
     brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位。從貢獻帳戶捐的算 ${c.giveBoost} 倍捐款額，用其他的錢捐算 1 比 1。務必記下每個人的捐款額，第 ${c.accidentMonth} 月會用到。`});
   if(r===c.accidentMonth) out.push({id:'accident',title:'重大事故',
     brief:`向每一位收 ${fm(c.accidentCost)}。捐款額每 ${fm(c.charityUnit)} 就有貴人相助保留 ${fm(c.charityCover)}；從貢獻帳戶捐過 ${fm(c.charityUnit)} 的人就全額保住、不用付。`});
   if(r===c.reallocA || r===c.reallocB) out.push({id:'realloc',title:'預算重分配窗口',
-    brief:`可以重新調整六個帳戶的分配比例與已經存進去的錢。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費，用學習帳戶的錢付只要 ${fm(c.unlockFeeLearn)}`:'這次免費'}。`});
+    brief:`可以重新調整六個帳戶的分配比例，也可以把已經存進帳戶裡的錢搬到別格（總額不變）。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費，用學習帳戶的錢付只要 ${fm(c.unlockFeeLearn)}`:'這次免費'}。`});
   return out;
 }
 /* 「現在這一步要做什麼」——副控畫面正中央那句話 */
@@ -1204,9 +1210,9 @@ function buildSyncState(){
     loan:{ unit:c.loanUnit, ratePct:Math.round(c.loanRate*100), capX:c.loanCapX },
     fun:{ per:c.funPer, cover:c.funCover },
     /* 志工端算錢會用到的參數：講師若在 ⚙ 設定裡臨場改了數字，副控台會跟著變 */
-    nums:{ stressCost:c.stressCost, marryExtra:c.marryExtra, knowUnit:1000,
+    nums:{ stressCost:c.stressCost, marryExtra:c.marryExtra, knowUnit:c.knowUnit,
            inflationExtra:c.inflationExtra, giveBoost:c.giveBoost,
-           joblessSaveCost:c.joblessSaveCost, charityUnit:c.charityUnit,
+           joblessSaveUnit:c.joblessSaveUnit, joblessSaveCover:c.joblessSaveCover, charityUnit:c.charityUnit,
            charityCover:c.charityCover, accidentCost:c.accidentCost,
            unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn },
     todo:syncTodo(), fixed:syncFixed(),
@@ -1472,11 +1478,13 @@ function dLog(msg,cls){
   d().log.unshift({m:S.round, t:msg, c:cls||''});
   if(d().log.length>80) d().log.pop();
 }
-/* 依序扣款鏈：生活→現金→投資→儲蓄→學習→貢獻；不足→借款（1 萬為單位、利滾利） */
+/* 依序扣款鏈：現金→生活→投資→學習→儲蓄→娛樂→貢獻；不足→借款（1 萬為單位、利滾利）
+   2026-08-11 改版：現金排到最前面（身上的錢先花掉才合理），娛樂也進鏈（原本刻意排除），
+   儲蓄排在學習後面——先動比較好補的，最後才動守護性最強的貢獻。 */
 function payChain(amt,label,borrow){
   if(borrow===undefined) borrow=true;
   const x=d(); let need=Math.round(amt);
-  const order=['life','pocket','invest','save','learn','give'];
+  const order=PAYORDER;
   for(const k of order){
     if(need<=0) break;
     const bal = k==='pocket'?x.pocket:x.acc[k];
@@ -1525,17 +1533,24 @@ function demoAllocate(){
   if(allocated>0) dLog(`分配完成：入帳 ${fm(allocated)}、現金 ${fm(inc-allocated)}`);
   else dLog(`沒有分配計畫，${fm(inc)} 全放身上（現金）`);
 }
-/* 繳生活費＋貸款利息＋自動清償；停薪月用儲蓄帳戶付 joblessSaveCost 就免付當月固定支出 */
+/* 繳生活費＋貸款利息＋自動清償；停薪月儲蓄每 500 抵 5,000 生活費（1:10），自動抵到剛好夠 */
 function demoExpense(){
   const x=d(); if(!x.on) return;
   const cfg=S.cfg, exp=curExpense();
-  if(isJobless(S.round) && x.acc.save>=cfg.joblessSaveCost){
-    x.acc.save-=cfg.joblessSaveCost;
-    dLog(`失業月：儲蓄帳戶發揮效益——支付 ${fm(cfg.joblessSaveCost)} 取代 ${fm(exp)} 生活費，順利度過`,'goodl');
-  }else{
-    if(isJobless(S.round)) dLog(`失業月儲蓄不足 ${fm(cfg.joblessSaveCost)}，生活費 ${fm(exp)} 照付`,'warn');
-    payChain(exp,'固定支出');
+  /* 停薪月：儲蓄每 joblessSaveUnit 抵 joblessSaveCover（1:10），自動抵到剛好夠、不會多扣。
+     抵不完的差額照原本的扣款鏈付。 */
+  let rest=exp;
+  if(isJobless(S.round) && exp>0){
+    const need=Math.ceil(exp/cfg.joblessSaveCover);
+    const have=Math.floor(x.acc.save/cfg.joblessSaveUnit);
+    const use=Math.min(need,have);
+    if(use>0){
+      const paid=use*cfg.joblessSaveUnit, covered=Math.min(exp, use*cfg.joblessSaveCover);
+      x.acc.save-=paid; rest=exp-covered;
+      dLog(`停薪月：儲蓄帳戶 ${fm(paid)} 抵掉 ${fm(covered)} 生活費${rest>0?`，還要付 ${fm(rest)}`:'，這個月不用再付'}`,'goodl');
+    }else dLog(`停薪月：儲蓄不足 ${fm(cfg.joblessSaveUnit)}，生活費 ${fm(exp)} 照付`,'warn');
   }
+  if(rest>0) payChain(rest,'固定支出');
   if(x.loan>0){
     const unpaid=payChain(Math.round(x.loan*S.cfg.loanRate),'貸款利息',false);
     if(unpaid>0){ x.loan+=unpaid; dLog(`利息繳不出來，${fm(unpaid)} 滾入本金（負債 ${fm(x.loan)}）`,'warn'); }
@@ -1605,14 +1620,27 @@ function demoStress(){
   if(rest>0){ dLog(`壓力事件：仍須支付 ${fm(rest)}`,'warn'); payChain(rest,'報復性消費'); }
   else dLog('壓力事件：平時的娛樂預算發揮效益，全額抵銷！','goodl');
 }
+/* 第 12 月月初：銀行抽銀根，欠多少還多少。
+   刻意不強制變賣投資（那是另一種懲罰），也刻意不再借新債來還舊債；
+   還不出來的部分就留著，直接帶進結算——「你以為手上有錢，其實你欠更多」。 */
+function demoPayoff(){
+  const x=d(); if(!x.on) return;
+  const owe=x.loan;
+  if(owe<=0){ dLog('銀行抽銀根：你沒有負債，這一關不用做任何事','goodl'); return; }
+  const short=payChain(owe,'銀行要求全數還款',false);
+  x.loan=short;
+  if(short<=0) dLog(`銀行抽銀根：${fm(owe)} 全部還清，從這個月起不用再付利息`,'goodl');
+  else dLog(`銀行抽銀根：${fm(owe)} 只還得出 ${fm(owe-short)}，還欠 ${fm(short)}（利息繼續算）`,'warn');
+}
 function demoKnowledge(){
   const x=d(); if(!x.on) return;
-  const units=Math.floor(x.acc.learn/1000);   /* 每 1,000 為單位 */
-  const amt=units*1000;
+  const U=S.cfg.knowUnit;
+  const units=Math.floor(x.acc.learn/U);      /* 每 U 為單位，不足一單位的無條件捨去 */
+  const amt=units*U;
   if(amt>0){
     x.acc.learn-=amt; x.know+=amt;
     dLog(`知識變現：學習帳戶 ${fm(amt)} 以 1:1 轉為每月主動收入（+${fm(amt)}/月${isJobless(S.round)?'，但停薪期間領不到，復工才開始發':''}）`,'goodl');
-  }else dLog('知識變現：學習帳戶不足 1,000，收入原地踏步','warn');
+  }else dLog(`知識變現：學習帳戶不足 ${fm(U)}，收入原地踏步`,'warn');
 }
 /* 公益捐贈。src='give' 從貢獻帳戶出，每 1,000 記 10,000 捐款額（giveBoost）；
    src='cash' 從其他錢出，1:1 計。記的是「捐款額」，重大事故時換保留額用。 */
@@ -1818,6 +1846,9 @@ function nextRound(){
        停薪月（第 6、7 月）跟薪水一起停——「你把錢投在自己身上換到的收入，也要等你回到職場才拿得到」。 */
     if(S.round===cfg.knowMonth){ demoKnowledge();
       queueOverlay(()=>{ play('fanfare'); openOverlay(knowledgeHTML(S.round), true); }); }
+    /* 第 12 月月初：銀行抽銀根。排在發薪之前——先把帳還了，再看這個月剩下什麼 */
+    if(S.round===cfg.payoffMonth){ demoPayoff();
+      queueOverlay(()=>{ play('boom'); openOverlay(payoffHTML(), true); }); }
     demoSalary();
     S.pend.filter(p=>p.due===S.round && !p.nosettle).forEach(p=>{
       demoSettle(p);
@@ -1990,7 +2021,7 @@ function stressHTML(){
       '定期釋放壓力的人，不會被壓力反噬'],
     '娛樂帳戶空空',[
       `<b class="hl">全額支付 ${fm(cfg.stressCost)}</b> 報復性消費`,
-      '從生活帳戶付，不夠依序動用其他帳戶',
+      '從現金與生活帳戶付，不夠依序動用其他帳戶',
       '（娛樂預算不是浪費，是安全閥）']
   ), QUOTES.stress);
 }
@@ -2012,13 +2043,14 @@ function inflationHTML(){
   </div>`, '你的薪水沒有變少，是錢變薄了——這就是為什麼光存錢不夠。');
 }
 function knowledgeHTML(r){
+  const cfg=S.cfg;
   const c=fixShell('固定事件・第 '+r+' 月月初','知識變現','投資在腦袋的錢，市場開始買單——系統開始檢測你的【學習帳戶】。換到的是<b>每月主動收入</b>'+(isJobless(r)?'；你現在正在停薪，這筆錢要<b>等復工才領得到</b>。':'，下次發薪就跟著進來。'),'#DDBE6C');
   return cardShell(c, branches(
     '學習帳戶有錢',[
       '專業技能獲得市場認可',
-      `學習帳戶資金以 <b class="hl">1,000 元為單位、1:1</b> 轉為<b class="hl">每月固定收入</b>`,
-      '（存 5,000 → 每月收入 +5,000。這是<b class="hl">主動收入</b>，跟薪水一起<b class="hl">停薪月停發</b>、復工才領得到）'],
-    '學習帳戶不足 1,000',[
+      `學習帳戶資金以 <b class="hl">${fm(cfg.knowUnit)} 為單位、1:1</b> 轉為<b class="hl">每月固定收入</b>（不足一個單位的<b class="hl">捨去</b>——學習帳戶 38,000 只能換 30,000）`,
+      '（存 30,000 → 每月收入 +30,000。這是<b class="hl">主動收入</b>，跟薪水一起<b class="hl">停薪月停發</b>、復工才領得到）'],
+    `學習帳戶不足 ${fm(cfg.knowUnit)}`,[
       '沒有新技能、沒有新籌碼',
       '收入原地踏步',
       '（投資自己，永遠是最划算的一筆）']
@@ -2027,6 +2059,21 @@ function knowledgeHTML(r){
     <button class="bigbtn gold" style="font-size:17px;padding:13px 32px" onclick="closeOverlay();setTimeout(openAccounts,80)">📖 開啟六帳戶介紹（正式教學）</button>
   </div>`;
 }
+function payoffHTML(){
+  const cfg=S.cfg;
+  const c=fixShell('固定事件・第 '+cfg.payoffMonth+' 月月初','銀行要求全數還款',
+    '銀行抽銀根了：你名下所有的欠款，這個月一次結清。有多少還多少，還不出來的，就這樣進結算。','#C96A5B');
+  return cardShell(c, branches(
+    '一路把負債控制住',[
+      '欠款不多，或早就還完了',
+      '帳戶裡的錢<b class="hl">還是你的</b>，可以放心進結算',
+      '<b class="hl">還清之後不用再付利息</b>——現金流當場變好看'],
+    '一路靠借錢撐',[
+      `依序從<b class="hl">現金 → 生活 → 投資 → 學習 → 儲蓄 → 娛樂 → 貢獻</b>扣，扣到還完為止`,
+      '<b class="hl">帳戶可能被清空</b>——你以為手上有錢，其實那些錢是別人的',
+      '還不完的部分<b class="hl">留著進結算</b>，繼續壓著你的淨資產'])
+  , '借來的錢從來不是你的錢，只是你還沒還的帳。');
+}
 function joblessHTML(){
   const cfg=S.cfg;
   const from=cfg.joblessMonth, to=cfg.joblessMonth+cfg.joblessLen-1;
@@ -2034,7 +2081,7 @@ function joblessHTML(){
   return cardShell(c, branches(
     '平時有存儲蓄帳戶',[
       `第 ${from}、${to} 月<b class="hl">停發主動收入</b>（薪水與知識變現都停；被動收入、投資現金流照領）`,
-      `儲蓄帳戶每支付 <b class="hl">${fm(cfg.joblessSaveCost)}</b> ＝ 順利度過一個月（<b class="hl">免付當月固定支出</b>）`,
+      `儲蓄帳戶每支付 <b class="hl">${fm(cfg.joblessSaveUnit)}</b> ＝ 抵掉 <b class="hl">${fm(cfg.joblessSaveCover)}</b> 生活費（<b class="hl">1 比 10</b>）——生活費 ${fm(curExpense())} 只要 <b class="hl">${fm(Math.ceil(curExpense()/cfg.joblessSaveCover)*cfg.joblessSaveUnit)}</b> 就全額抵完`,
       '過去準備的緊急備用金，此刻發揮效益'],
     '儲蓄帳戶空空',[
       `第 ${from}、${to} 月都沒有主動收入進帳`,
@@ -2091,6 +2138,7 @@ function reallocHTML(r){
         : `・<b>第一次調整需支付學習費 ${fm(cfg.unlockFee)}</b>，有機會得到市場消息；<br>
 &nbsp;&nbsp;・<b style="color:var(--gold-deep)">用「學習帳戶」的錢付，只要 ${fm(cfg.unlockFeeLearn)}</b>——平時有投資自己的人，學費打了兩折；<br>
 &nbsp;&nbsp;・之後觸發事件時調整<b>無需付費</b>。`}<br>
+      ・<b>不只改比例</b>——<b style="color:var(--green)">已經存在帳戶裡的錢也可以搬到別格</b>，總額不變、只是換一格放；<br>
       ・想清楚：這幾個月，哪個帳戶救過你？哪個帳戶空著讓你痛過？
     </div>
     <div class="formfoot">
@@ -2239,7 +2287,7 @@ function openAccounts(){
       <div class="acc grow"><div class="ic">🤝</div><h5>貢獻<small>建議 5%</small></h5><p>建立社會連結與善意。看似給予，實則是為自己佈下最強的安全網。</p></div>
     </div>
     <div class="accfoot">綠色＝<b>生存防禦</b>（確保你不提前出局）・金色＝<b>成長與魔法</b>（決定你能飛多高）<br>
-    若生活不足以支付固定支出，系統將強制依序抽取：投資 → 儲蓄 → 學習 → 貢獻。</div>
+    若生活帳戶不足以支付，系統會依序動用：現金 → 生活 → 投資 → 學習 → 儲蓄 → 娛樂 → 貢獻。</div>
   </div>`));
 }
 
@@ -2626,11 +2674,11 @@ function openTimerPanel(){
 /* ---------- 設定面板 ---------- */
 const SETTINGS=[
   ['income','月收入'],['expense','固定支出'],['rounds','總回合數'],
-  ['settleAfter','投資開牌間隔(月)'],['stressCost','壓力事件消費額'],['joblessSaveCost','失業月儲蓄抵扣額'],
+  ['settleAfter','投資開牌間隔(月)'],['stressCost','壓力事件消費額'],['joblessSaveUnit','停薪月儲蓄單位'],['joblessSaveCover','停薪月每單位抵扣'],
   ['accidentCost','重大事故金額'],['charityCover','每捐1000保留額'],['giveBoost','貢獻帳戶捐款倍數'],
   ['marryExtra','結婚生子月增額'],['inflationExtra','通貨膨脹月增額'],
   ['funPer','娛樂抵扣單位'],['funCover','娛樂每單位抵銷額'],
-  ['unlockFee','重分配首次學習費'],['unlockFeeLearn','重分配・學習帳戶價'],
+  ['unlockFee','重分配首次學習費'],['unlockFeeLearn','重分配・學習帳戶價'],['knowUnit','知識變現單位'],
   ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(月現金流倍數)'],
   ['timeBudgetMin','課堂時間預算(分)']
 ];
@@ -2764,7 +2812,7 @@ function renderAxis(){
     /* 💼 掛在「宣布失業」的那個月（＝停薪前一個月），不然會跟第 6 月的 💝 公益撞在同一格被蓋掉 */
     const FIX={[cfg.mindlessMonth]:'🌙',[cfg.stressMonth]:'🌡',[cfg.knowMonth]:'★',
       [cfg.joblessMonth-1]:'💼',[cfg.charityMonth]:'💝',[cfg.accidentMonth]:'⚠',
-      [cfg.inflationMonth]:'💸',[cfg.marryMonth]:'💍'};
+      [cfg.inflationMonth]:'💸',[cfg.marryMonth]:'💍',[cfg.payoffMonth]:'🏦'};
     if(S.pend.some(p=>p.due===r&&r>=S.round&&!p.nosettle)) flag='🚀';
     else if(FIX[r]) flag=FIX[r];
     h+=`<div class="tick ${done?'done':''} ${now?'now':''}" title="第 ${r} 月">
@@ -2844,7 +2892,7 @@ function renderStage(){
       <div class="bigamt ${jobless?'minus':'plus'} num" id="bigAmt">+0</div>
       ${breakdown}
       <p class="pcap">${jobless
-        ? `這個月<b>沒有主動收入</b>——薪水與知識變現都停（被動收入、投資現金流照領）。<b>儲蓄帳戶每支付 ${fm(cfg.joblessSaveCost)}</b> 可順利度過一個月——免付當月固定支出。`
+        ? `這個月<b>沒有主動收入</b>——薪水與知識變現都停（被動收入、投資現金流照領）。<b>儲蓄帳戶每支付 ${fm(cfg.joblessSaveUnit)} 可以抵 ${fm(cfg.joblessSaveCover)} 生活費</b>（1 比 10），系統會自動抵到剛好夠。`
         : `薪水進帳了。<b>先拿到全額，再決定去向</b>——請學員把籌碼領到手上，<br>依分配表放進帳戶，準備好就翻本月命運。`}</p>
       <button class="bigbtn gold" onclick="mainAction()">翻 開 本 月 命 運 →</button>
     </div>`;
@@ -2899,7 +2947,6 @@ function renderStage(){
       <div class="eyebrow">第 ${S.round} 月・本月事件</div>
       <div class="deck" onclick="drawEvent()" role="button" tabindex="0" aria-label="翻開本月事件">
         <span class="q">？</span>
-        <span class="cnt num">剩 ${cfg.rounds-S.round+1} 張</span>
       </div>
       <div class="tapHint">點 牌 翻 開</div>
     </div>`;
@@ -2978,10 +3025,11 @@ function renderSide(){
   const FIXNOTE={
     [cfg.mindlessMonth]:'🌙 <b>本月月底</b>：無意識消費檢查——預算帳戶數 <2 者，從此每月底現金＋生活歸零！',
     [cfg.stressMonth]:`🌡 <b>本月月底</b>：壓力事件——報復性消費 ${fm(cfg.stressCost)}，娛樂每 ${fm(cfg.funPer)} 抵 ${fm(cfg.funCover)}！`,
-    [cfg.knowMonth]:'★ <b>本月月初</b>：知識變現——學習帳戶每 1,000 以 1:1 轉為每月主動收入；停薪期間跟薪水一起停，復工才開始領！',
+    [cfg.knowMonth]:`★ <b>本月月初</b>：知識變現——學習帳戶每 ${fm(cfg.knowUnit)} 以 1:1 轉為每月主動收入（不足一單位捨去）；停薪期間跟薪水一起停，復工才開始領！`,
+    [cfg.payoffMonth]:'🏦 <b>本月月初</b>：銀行要求全數還款——名下欠款一次結清，有多少還多少，還不出來的直接進結算！',
     [cfg.charityMonth]:`💝 <b>本月月底</b>：公益勸募——每 1,000 為單位自由捐贈；從貢獻帳戶捐算 ${cfg.giveBoost} 倍捐款額`,
     [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——捐款額每 1,000 保留 ${fm(cfg.charityCover)} 支出！`,
-    [cfg.joblessMonth-1]:`💼 <b>本月月底</b>：失業／公司倒閉——第 ${cfg.joblessMonth}、${cfg.joblessMonth+cfg.joblessLen-1} 月停薪（儲蓄每付 ${fm(cfg.joblessSaveCost)} 免付當月固定支出）`,
+    [cfg.joblessMonth-1]:`💼 <b>本月月底</b>：失業／公司倒閉——第 ${cfg.joblessMonth}、${cfg.joblessMonth+cfg.joblessLen-1} 月停薪（儲蓄每付 ${fm(cfg.joblessSaveUnit)} 抵 ${fm(cfg.joblessSaveCover)} 生活費）`,
     [cfg.inflationMonth]:`💸 <b>繳費前</b>：通貨膨脹——固定支出永久 +${fm(cfg.inflationExtra)}，<b>本月就照新金額繳</b>；月底開放預算重分配（${reallocFee}）`,
     [cfg.marryMonth]:`💍 <b>繳費前</b>：結婚生子——固定支出永久 +${fm(cfg.marryExtra)}，<b>本月就照新金額繳</b>；月底開放預算重分配（${reallocFee}）`
   };
@@ -2994,7 +3042,7 @@ function renderSide(){
       ${step(0,jobless?'停薪月：沒有主動收入（薪水＋知識變現都停；被動與投資現金流照領）':`發薪 ${fm(cfg.income)}，籌碼到手`)}
       ${step(1,'依分配表放入帳戶')}
       ${step(2,'翻開本月事件')}
-      ${step(3,jobless?`繳生活費（儲蓄可付 ${fm(cfg.joblessSaveCost)} 抵）`:`繳固定支出 ${fm(curExpense())}`)}
+      ${step(3,jobless?`繳生活費（儲蓄每 ${fm(cfg.joblessSaveUnit)} 抵 ${fm(cfg.joblessSaveCover)}）`:`繳固定支出 ${fm(curExpense())}`)}
       ${step(4,'月底結算，進入下一月')}
     </ul>
     <h4>公告欄</h4>
