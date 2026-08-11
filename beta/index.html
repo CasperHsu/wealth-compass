@@ -231,7 +231,7 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
 
 /* 開場 */
 .startcard{max-width:680px;margin:0 auto}
-.coverwrap{margin:0 auto 16px;max-width:640px}
+.coverwrap{margin:0 auto 18px;max-width:640px}
 .coverimg{width:100%;display:block;border-radius:16px;border:2px solid var(--gold);box-shadow:var(--shadow)}
 /* 規則說明兩頁 */
 .rules{width:min(880px,94vw);text-align:left;background:var(--cream);border-radius:20px;padding:34px 44px 24px;border:1.5px solid var(--gold);position:relative}
@@ -288,7 +288,7 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
 .startcard h1{font-family:var(--serif);font-size:52px;font-weight:900;letter-spacing:.12em;color:var(--green-900)}
 .startcard h1 .bk{color:var(--gold-deep)}
 .startcard .tagline{font-family:var(--serif);font-size:18px;color:var(--ink-soft);margin:8px 0 20px;letter-spacing:.08em}
-.startrules{display:flex;gap:12px;justify-content:center;margin-bottom:24px;flex-wrap:wrap}
+.startrules{display:flex;gap:12px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
 .startrules div{background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:12px;padding:12px 20px;min-width:148px}
 .startrules b{display:block;font-size:22px;font-weight:900;color:var(--green)}
 .startrules span{font-size:13px;color:var(--ink-soft)}
@@ -2837,17 +2837,20 @@ const PHASE_META = {
 function renderStage(){
   const box=$('#stageBox'), cfg=S.cfg;
   if(!S.started){
+    /* 四格數字排在封面圖上面：投影時最先被看到的應該是規則，不是圖 */
+    const cover = IMG_COVER.startsWith('data:')
+      ? `<div class="coverwrap"><img class="coverimg" src="${IMG_COVER}" alt="視界致富羅盤"></div>`
+      : `<div class="starrow">${starSVG()}</div>
+         <h1 style="font-size:46px"><span class="bk">【</span>視界致富羅盤<span class="bk">】</span></h1>
+         <p class="tagline">這不僅是一場遊戲，而是你真實人生的財務壓力測試。</p>`;
     box.innerHTML=`<div class="startcard">
-      ${IMG_COVER.startsWith('data:')?`<div class="coverwrap"><img class="coverimg" src="${IMG_COVER}" alt="視界致富羅盤"></div>`:`
-      <div class="starrow">${starSVG()}</div>
-      <h1 style="font-size:46px"><span class="bk">【</span>視界致富羅盤<span class="bk">】</span></h1>
-      <p class="tagline">這不僅是一場遊戲，而是你真實人生的財務壓力測試。</p>`}
       <div class="startrules">
         <div><b class="num">${fm(cfg.income)}</b><span>每月固定收入</span></div>
         <div><b class="num">${fm(cfg.expense)}</b><span>每月固定支出</span></div>
         <div><b>${cfg.rounds} 回合</b><span>1 回合＝1 個月</span></div>
         <div><b>淨資產＋現金流</b><span>雙指標決勝負</span></div>
       </div>
+      ${cover}
       <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
         <button class="bigbtn gold" onclick="event.stopPropagation();openRules(0)">📖 遊 戲 規 則</button>
         <button class="bigbtn" onclick="mainAction()">進 入 模 擬</button>
