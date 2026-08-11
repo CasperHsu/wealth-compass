@@ -1126,6 +1126,10 @@ function makeTransport(room, onMsg, onUp){
 function consoleURL(){
   return (location.origin+location.pathname).replace(/[^/]*$/,'')+'console/';
 }
+/* 學員自己手機要開的網址（同一個房號，畫面會跟著主控走） */
+function studentURL(){
+  return (location.origin+location.pathname).replace(/[^/]*$/,'')+'student/';
+}
 
 /* 只送「卡面看得到的」欄位；gm／dead 等底牌絕不外流 */
 function syncFace(id){
@@ -1278,7 +1282,8 @@ function renderSync(){
         : '<b style="color:var(--brick)">連線中…</b>（暫時只有同一台電腦的分頁會同步）'}</div>
     <div class="sylist">${rows}</div>
     <div class="syfoot">這裡只是提醒，<b>不會擋住流程</b>——你隨時可以繼續往下推。<br>
-      組長網址：<b style="word-break:break-all">${consoleURL()}</b></div>`;
+      組長網址：<b style="word-break:break-all">${consoleURL()}</b><br>
+      學員網址：<b style="word-break:break-all">${studentURL()}</b>（房號一樣 ${SYNC.room}）</div>`;
 }
 
 /* =====================================================================
