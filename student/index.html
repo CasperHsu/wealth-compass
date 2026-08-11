@@ -281,7 +281,9 @@ body.ready.disconnected #app{padding-top:118px}
 <!-- ══════════════ 開場：三步 ══════════════ -->
 <div id="setup"><div class="swrap">
   <div class="slogo">視界致富羅盤・我的帳本</div>
-  <div class="ssub">這是你自己的帳本，畫面會跟著講師走</div>
+  <div class="ssub">給無法到現場的學員用；畫面會跟著講師走</div>
+  <div style="text-align:center;font-size:13px;color:var(--ink-mute);line-height:1.7;margin:-4px 0 18px">
+    在教室現場的同學請用桌上的籌碼與講義，<br>由學長姐當銀行——不用開這一頁。</div>
 
   <div class="step">
     <h3>① 房號</h3>
@@ -1488,9 +1490,11 @@ function renderGrid(st){
                        : `投資帳戶 ${fm(avail)}，買不起`;
       const spare=Math.max(0, lo-u*st.price);
       if(spare>0){ sub += `　多借 ${fm(spare)}`; pick=acctPick(st,i,'invest','多借的放進',true); }
+      /* 借款刻意不放在這一層：「可以跟銀行借」是要學員自己想到的事，
+         主控台從頭到尾不提，實體課要開口問志工才辦得成。線上版的等價動作
+         ＝自己去點「明細」，借款的按鈕在那裡面。 */
       mini=`<div class="mini">
-        <button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button>
-        <button class="gold" onclick="event.stopPropagation();bumpLoan(${i})">跟銀行借 ${fm(loanUnit())}</button></div>`;
+        <button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button></div>`;
     }
     else if(st.mode==='count'){
       const u=m.cnt[i], amt=u*st.unitAmt;
@@ -1639,9 +1643,10 @@ function bumpUnit(i,d){
       const cap=maxUnitsFor(i,st,D);
       if(nx>cap){
         const avail=D?(D.avail||0):0;
+        /* 這裡刻意不寫「可以跟銀行借」——那是要學員自己想到的事 */
         toast(cap>0
-          ? `${nameOf(i)} 的投資帳戶只剩 ${fm(avail)}，最多 ${cap} 單位。要再多買，他得自己開口跟銀行借。`
-          : `${nameOf(i)} 的投資帳戶只有 ${fm(avail)}，買不起這一張。`);
+          ? `你的投資帳戶只剩 ${fm(avail)}，最多 ${cap} 單位。`
+          : `你的投資帳戶只有 ${fm(avail)}，買不起這一張。`);
         return;
       }
     }
@@ -1650,8 +1655,8 @@ function bumpUnit(i,d){
       const cap=countCap(i,st,D,now);
       if(nx>cap){
         toast(st.alsoCash
-          ? `${nameOf(i)} 的錢只夠捐 ${cap} 份（貢獻帳戶 ${fm(avail)}，其餘從他身上的錢出）。`
-          : `${nameOf(i)} 的${ANAME[st.acct]||''}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`);
+          ? `你的錢只夠捐 ${cap} 份（貢獻帳戶 ${fm(avail)}，其餘從你身上的錢出）。`
+          : `你的${ANAME[st.acct]||''}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`);
         return;
       }
     }
@@ -1687,8 +1692,8 @@ function bumpLoan(i){
   const otherMonths=Math.max(0,((E&&E.loan[i])||0)-Math.min(now,cost));
   if(otherMonths+nx>cap){
     toast(cap>0
-      ? `${nameOf(i)} 的借款上限是月現金流 ×${loanCapX()}＝${fm(cap)}，已經借到頂了。`
-      : `${nameOf(i)} 現在的月現金流是 0 或負的，銀行不能再借給他。`);
+      ? `你的借款上限是月現金流 ×${loanCapX()}＝${fm(cap)}，已經借到頂了。`
+      : `你現在的月現金流是 0 或負的，銀行不能再借給你。`);
     return;
   }
   m.loan[i]=nx;
@@ -1768,7 +1773,7 @@ function allocPanel(i){
     </div>` : '';
   const nx=(i+1<N())?i+1:-1;
   return `<button class="dx" onclick="closeDrawer()">✕</button>
-    <h3>${nameOf(i)}　的分配比例</h3>
+    <h3>我 的 分 配 比 例</h3>
     <div class="ahint">
       把他自己說的數字直接打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
       ${tr>1?`這次設定<b>從第 ${tr} 月開始生效</b>。`:'第 1 月起生效，之後每個月都照這個比例。'}</div>
@@ -1830,6 +1835,47 @@ function allocFix(i,on){
   if(on) toast('現在改的是第 1 月的比例，前面每個月都會跟著重算');
 }
 function closeDrawer(){ ALLOCAT=null; ALLOCI=-1; $('#drawer').classList.remove('open'); render(); }
+/* 借款區塊。只有在「投資機會」那一步才出現——平常不給看，
+   免得整場都在提醒學員「你可以借錢」。 */
+function loanSection(i){
+  const st=STEPS[CS.cur.i];
+  if(!st || st.mode!=='units') return '';
+  const m=markOf(st), D=detOf(st,i);
+  const avail=D?(D.avail||0):0, got=m.loan[i]||0, u=m.cnt[i]||0;
+  const short=Math.max(0, st.price-(avail+got));
+  /* 借款上限＝月淨現金流 ×10。現金流是負的就借不到——這條規則本身就是要教的東西，
+     所以寧可寫清楚為什麼借不到，也不要讓按鈕按下去沒反應。 */
+  const cap=loanCapOf(i);
+  const otherMonths=Math.max(0, ((E&&E.loan[i])||0) - Math.min(got, u*st.price));
+  const blocked = cap<=0 || (otherMonths+got+loanUnit() > cap);
+  return `<div class="dsec">跟 銀 行 借 錢</div>
+    <div style="font-size:13px;line-height:1.7;color:var(--ink-soft);padding:2px 2px 8px">
+      這一張「${st.title}」${st.one?'一筆':'每單位'} <b>${fm(st.price)}</b>，你的投資帳戶有 <b>${fm(avail)}</b>。
+      ${short>0?`還差 <b style="color:var(--brick)">${fm(short)}</b> 才買得起。`:'夠買了，借不借都可以。'}<br>
+      借款<b>只能用在這一張投資上</b>；每借 1 萬，之後<b>每個月要付 ${fm(Math.round(10000*loanRate()))} 利息</b>，一直付到還完。</div>
+    <div class="drow"><div class="k">這一張已經借了</div>
+      <div class="v" style="color:var(--gold-deep)">${fm(got)}</div></div>
+    <div class="drow"><div class="k">你的借款上限（月淨現金流 ×${loanCapX()}）</div>
+      <div class="v" style="${cap<=0?'color:var(--brick)':''}">${fm(cap)}</div></div>
+    ${blocked?`<div style="background:var(--brick-50);border:1.5px solid var(--brick);border-radius:10px;
+        padding:10px 12px;font-size:13px;line-height:1.65;margin:8px 0 2px">
+        ${cap<=0
+          ? '你現在的<b>每月淨現金流是 '+fm(flowOf(i))+'</b>，銀行不會借錢給一個每個月都在虧的人——先把現金流做正，才有借力的資格。'
+          : '你已經借到上限了（'+fm(cap)+'）。要再借更多，得先把每個月的淨現金流做大。'}</div>`:''}
+    <div style="display:flex;gap:8px;margin:8px 0 4px">
+      <button class="dbtn" style="flex:1;margin:0;border-color:var(--gold);color:var(--gold-deep)"
+        ${blocked?'disabled style="flex:1;margin:0;opacity:.4"':''}
+        onclick="borrowMore(${i})">再借 ${fm(loanUnit())}</button>
+      ${got?`<button class="dbtn" style="flex:none;width:110px;margin:0" onclick="clearLoan(${i})">不借了</button>`:''}
+    </div>
+    ${u?'':`<div style="font-size:12px;color:var(--ink-mute);padding:2px">借夠了之後，關掉這個視窗，回上一頁點「投入」。</div>`}`;
+}
+function borrowMore(i){ bumpLoan(i); const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i); }
+function clearLoan(i){
+  const st=STEPS[CS.cur.i]; if(!st || st.mode!=='units') return;
+  markOf(st).loan[i]=0; saveCS(); render();
+  const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i);
+}
 function stuPanel(i){
   const r=curRound();
   let holds='';
@@ -1861,17 +1907,18 @@ function stuPanel(i){
     <h3>${nameOf(i)}</h3>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">
       淨資產 <b style="color:var(--green-900)">${fm(netOf(i))}</b>　每月淨現金流 <b>${fm(flowOf(i))}</b><br>
-      桌上籌碼跟這裡對不上時，用 +／− 改成跟桌上一樣，後面每個月會自動重算。</div>
+      數字跟你自己記的對不上時，用 +／− 改成你的，後面每個月會自動重算。</div>
     <div class="dsec">六 個 帳 戶
       <button style="float:right;font-size:12px;color:var(--green);font-weight:700"
         onclick="openDrawer('alloc',${i})">改分配比例</button></div>${accs}
+    ${loanSection(i)}
     <div class="dsec">持 有 的 投 資</div>${holds}
     <div class="dsec">收 入 與 負 債</div>
     <div class="drow"><div class="k">每月投資配息（被動）</div><div class="v">${fm(passiveOf(i,r+1))}</div></div>
     <div class="drow"><div class="k">每月其他收入（知識變現＋投資現金流）</div><div class="v">${fm(otherOf(i,r+1))}</div>
       <div class="adj"><button onclick="adjAcc('other',${i},-1000)">−</button>
       <button onclick="adjAcc('other',${i},1000)">＋</button></div></div>
-    <div class="drow"><div class="k">投資貸款（他自己開口借的）</div><div class="v" style="color:var(--gold-deep)">${fm(E.loan[i])}</div>
+    <div class="drow"><div class="k">投資貸款（你自己借的）</div><div class="v" style="color:var(--gold-deep)">${fm(E.loan[i])}</div>
       ${E.loan[i]?`<div class="adj"><button style="width:auto;padding:0 10px;font-size:14px" onclick="doRepay(${i})">還款</button></div>`:''}</div>
     <div class="drow"><div class="k">被迫負債（繳不出錢欠的）</div><div class="v" style="color:var(--brick)">${fm(E.debt[i])}</div>
       <div class="adj"><button onclick="adjAcc('debt',${i},-10000)">−</button>
@@ -1880,7 +1927,7 @@ function stuPanel(i){
     <div class="dsec">每 月 應 付 利 息</div>
     <div class="drow"><div class="k">欠款 ${fm(debtOf(i))} × 月息 ${Math.round(loanRate()*100)}%</div>
       <div class="v">${fm(interestOf(i))}</div></div>
-    <div class="dsec">他 這 一 局 的 歷 程</div>
+    <div class="dsec">我 這 一 局 的 歷 程</div>
     <div class="hist">${hist}</div>`;
 }
 /* 投資單位改的是「當初買的那一步」，所以之後每個月的配息會自動跟著重算 */
@@ -1904,7 +1951,7 @@ function doRepay(i){
   if(amt<=0) return;
   CS.repay.push({r,i,amt});
   saveCS(); render(); openDrawer('stu',i);
-  toast(`${nameOf(i)} 還了 ${fm(amt)} 投資貸款`);
+  toast(`還了 ${fm(amt)} 投資貸款`);
 }
 function setPanel(){
   const link = (ST||CS.manual) ? '' :
