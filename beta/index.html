@@ -913,7 +913,7 @@ const CAT = {
     flavor:'一間主打「重塑認知邊界、開創財務與時間自由」的財商學院正招募核心合夥人，正是入股時機。'},
   luxury:{kind:'bigspend',tag:'試煉・慾望考驗',wash:'#C96A5B',title:'大額消費的誘惑',amt:-200000,pin:[11],
     flavor:'走過旗艦店櫥窗，那台跑車／那只名錶在燈光下閃閃發亮。犒賞自己一整年的辛苦——刷下去了。'},
-  bridge:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'團隊內部資金代墊周轉',unit:10000,cf:1000,nosettle:true,keep:true,pin:[12],
+  bridge:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'團隊內部資金代墊周轉',unit:100000,cf:1000,nosettle:true,keep:true,pin:[12],
     flavor:'你信任的商業團隊短期週轉，開出穩定的代墊利息。一年下來的信用與人脈，此刻變成了機會。'},
   /* ── 補牌（月數改大於 12 時使用） ── */
   calm1:{kind:'calm',tag:'日常・風平浪靜',wash:'#A9BB9B',title:'平凡而珍貴的一個月',
@@ -1958,7 +1958,7 @@ function cardHTML(c,id){
       <div class="amt minus num">−${fm(cost)}</div>
       <div class="note">跑車／精品／名錶——慾望的帳單。</div>
     </div>
-    <div class="hintbox">💡 <b>娛樂帳戶每支出 ${fm(cfg2.funPer)} 可抵銷 ${fm(cfg2.funCover)}</b>；抵不完的差額，從生活帳戶（或依序動用其他帳戶）支付。</div>`, QUOTES.luxury);
+    <div class="hintbox">💡 <b>娛樂帳戶每支出 ${fm(cfg2.funPer)} 可抵銷 ${fm(cfg2.funCover)}</b>——也就是<b>從娛樂帳戶拿出來的錢 ×${Math.round(cfg2.funCover/cfg2.funPer)}，就是能抵掉的金額</b>；抵不完的差額，從生活帳戶（或依序動用其他帳戶）支付。</div>`, QUOTES.luxury);
   }
   if(c.kind==='good'||c.kind==='expense'){
     const plus=c.amt>0;
@@ -2016,7 +2016,7 @@ function stressHTML(){
   const c=fixShell('固定事件・第 '+cfg.stressMonth+' 月','壓力事件・報復性消費','長期壓力累積到臨界點，這個月你花了 '+fm(cfg.stressCost)+' 元大肆血拼——系統開始檢測你的【娛樂帳戶】。','#E8C98F');
   return cardShell(c, branches(
     '平時有存娛樂帳戶',[
-      `娛樂帳戶每支出 <b class="hl">${fm(cfg.funPer)}</b> 可抵銷 <b class="hl">${fm(cfg.funCover)}</b> 消費`,
+      `娛樂帳戶每支出 <b class="hl">${fm(cfg.funPer)}</b> 可抵銷 <b class="hl">${fm(cfg.funCover)}</b> 消費（<b class="hl">拿出來的錢 ×${Math.round(cfg.funCover/cfg.funPer)}</b>）`,
       `存 ${fm(cfg.funPer*3)} 就能<b class="hl">全額抵銷 ${fm(cfg.stressCost)}</b>`,
       '定期釋放壓力的人，不會被壓力反噬'],
     '娛樂帳戶空空',[
@@ -2106,7 +2106,7 @@ function charityHTML(){
   ${branches('從貢獻帳戶捐',[
       `每 <b class="hl">${fm(cfg.charityUnit)}</b> 記成 <b class="hl">${fm(cfg.charityUnit*cfg.giveBoost)}</b> 捐款額（${cfg.giveBoost} 倍）`,
       '平時有專款專用的人，善意被放大',
-      '捐款額請記下來，第 '+cfg.accidentMonth+' 月會用到'],
+      '捐款額請自己記下來'],   /* 刻意不寫「第 9 月會用到」——那是後面才要揭曉的伏筆 */
     '從其他的錢捐',[
       `捐多少記多少（1:1），捐 ${fm(cfg.charityUnit)} 就是 ${fm(cfg.charityUnit)}`,
       '沒有貢獻帳戶也可以捐，只是換算比較吃虧',
@@ -2136,8 +2136,7 @@ function reallocHTML(r){
       ${unlocked
         ? '・<b style="color:var(--green)">已解鎖・本次免費調整</b>——學以致用，把前幾個月的教訓放進新的比例。'
         : `・<b>第一次調整需支付學習費 ${fm(cfg.unlockFee)}</b>，有機會得到市場消息；<br>
-&nbsp;&nbsp;・<b style="color:var(--gold-deep)">用「學習帳戶」的錢付，只要 ${fm(cfg.unlockFeeLearn)}</b>——平時有投資自己的人，學費打了兩折；<br>
-&nbsp;&nbsp;・之後觸發事件時調整<b>無需付費</b>。`}<br>
+&nbsp;&nbsp;・<b style="color:var(--gold-deep)">用「學習帳戶」的錢付，只要 ${fm(cfg.unlockFeeLearn)}</b>——平時有投資自己的人，學費打了兩折。`}<br>
       ・<b>不只改比例</b>——<b style="color:var(--green)">已經存在帳戶裡的錢也可以搬到別格</b>，總額不變、只是換一格放；<br>
       ・想清楚：這幾個月，哪個帳戶救過你？哪個帳戶空著讓你痛過？
     </div>
