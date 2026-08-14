@@ -333,11 +333,11 @@ function toast(msg){
    alloc  ：每位學員的收入分配比例。key＝生效月份，value＝六人的比例物件（沒設定＝null）
    mlog   ：主控台每個月廣播過來的事實。key＝月份，value＝{薪水,生活費,失業,卡片,開牌,固定事件,階段}
    marks  ：每一個步驟裡組長的操作，key＝「月|階段|步驟代號」
-   fixes  ：手動更正（明細裡按 +／− 改的），一筆 {r,i,k,amt}
+   fixes  ：手動更正（明細裡按 +／− 改的）一筆 {r,i,k,amt}；搬錢一筆 {r,i,k:來源,k2:目的,amt}
    repay  ：主動償還投資貸款，一筆 {r,i,amt}
 ===================================================================== */
 /* 規則改版就換鍵：舊帳本的月份表與卡片金額都不一樣，重播會算出錯的數字 */
-const CKEY='zfl-console-v6';
+const CKEY='zfl-console-v7';
 const MAXSTU=6;
 let CS=null, E=null;                       /* CS＝存下來的帳本；E＝重算出來的當下狀態 */
 
@@ -352,7 +352,7 @@ const PRESET= { ml:{life:0,fun:0,save:0,invest:0,learn:0,give:0},
                 std:{life:60,fun:10,save:10,invest:10,learn:5,give:5} };
 
 function newLedger(){
-  return { v:6, room:'VISION', table:1, n:6, names:['','','','','',''],
+  return { v:7, room:'VISION', table:1, n:6, names:['','','','','',''],
            alloc:{}, mlog:{}, marks:{}, fixes:[], repay:[],
            cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
 }
@@ -365,7 +365,7 @@ function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e
 function loadCS(){
   /* v1 的舊帳本沒有帳戶資料，算不出正確數字，一律作廢重來（順便解掉「打開就是上一場」） */
   try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
-       const o=JSON.parse(raw); return (o&&o.v===6)?o:null; }catch(e){ return null; }
+       const o=JSON.parse(raw); return (o&&o.v===7)?o:null; }catch(e){ return null; }
 }
 function nameOf(i){ return (CS.names[i]||'').trim() || ('學員 '+LET[i]); }
 
@@ -649,7 +649,9 @@ function cashOf(i,X){ const S=X||E; return S ? ACCS.reduce((s,k)=>s+S.A[i][k],0)
 function countCap(i,st,D,now){
   const avail=D?(D.avail||0):0;
   const pool=avail + (st.alsoCash ? Math.max(0, cashOf(i)-avail) : 0);
-  return Math.floor(pool/st.unitAmt)+(now||0);
+  /* 公益（alsoCash）的池子會隨著點擊縮小，要把已經點掉的加回來才是總量；
+     知識變現的 avail 是月初拍下來的快照、不會縮，再加一次就變成「永遠都能再點一下」 */
+  return Math.floor(pool/st.unitAmt)+(st.alsoCash?(now||0):0);
 }
 function netOf(i){ return cashOf(i)+assetOf(i)-debtOf(i); }
 function flowOf(i){
@@ -764,8 +766,28 @@ function applyFixes(X,r){
     const d=payFrom(X,p.i,pay,'償還投資貸款',r,false,CS.mlog[r]);
     X.loan[p.i]-=(pay-d.short);
   });
+  /* 搬錢本來是一對（來源 −／目的 +）。兩筆各自夾在 0 的話，回頭改早月讓來源沒錢時，
+     負的那筆被夾成 0、正的那筆照給 → 憑空生錢。改成綁在一起算：有多少搬多少。 */
+  const fixTake=(i,k,amt)=>{
+    if(ACCS.indexOf(k)>=0){ const t=Math.min(amt,X.A[i][k]); X.A[i][k]-=t; return t; }
+    if(k==='pocket'){ const a=Math.min(amt,X.pocket[i]); X.pocket[i]-=a;
+      const b=Math.min(amt-a,X.incoming[i]); X.incoming[i]-=b; return a+b; }
+    if(X[k]){ const t=Math.min(amt,X[k][i]); X[k][i]-=t; return t; }
+    return 0;
+  };
+  const fixGive=(i,k,amt)=>{
+    if(ACCS.indexOf(k)>=0) X.A[i][k]+=amt;
+    else if(k==='pocket') X.pocket[i]+=amt;
+    else if(X[k]) X[k][i]+=amt;
+  };
   (CS.fixes||[]).forEach(fx=>{
     if(fx.r!==r) return;
+    if(fx.k2){   /* 搬錢：一筆搞定，總額永遠守恆 */
+      const moved=fixTake(fx.i,fx.k,fx.amt); fixGive(fx.i,fx.k2,moved);
+      elog(X,fx.i,r,`搬錢：${ANAME[fx.k]||fx.k} → ${ANAME[fx.k2]||fx.k2} ${fm(moved)}`
+        +(moved<fx.amt?`（原本要搬 ${fm(fx.amt)}，那個月只搬得出 ${fm(moved)}）`:''),'fix');
+      return;
+    }
     if(ACCS.indexOf(fx.k)>=0) X.A[fx.i][fx.k]=Math.max(0,X.A[fx.i][fx.k]+fx.amt);
     else if(fx.k==='pocket') X.pocket[fx.i]=Math.max(0,X.pocket[fx.i]+fx.amt);
     else if(X[fx.k]) X[fx.k][fx.i]=Math.max(0,X[fx.k][fx.i]+fx.amt);
@@ -968,8 +990,9 @@ function phFixed(X,r,f,fx,nm){
       break;
     case 'know':
       for(let i=0;i<MAXSTU;i++){
-        const avail=X.A[i].learn, u=m.cnt[i]||0, amt=u*nm.knowUnit;
-        if(amt>0){ X.A[i].learn-=Math.min(amt,X.A[i].learn); X.other[i]+=amt;
+        /* 入帳也要夾住：只有扣款夾、入帳不夾的話，上限一旦算錯就會憑空多出每月收入 */
+        const avail=X.A[i].learn, u=Math.min(m.cnt[i]||0, Math.floor(avail/nm.knowUnit)), amt=u*nm.knowUnit;
+        if(amt>0){ X.A[i].learn-=amt; X.other[i]+=amt;
           elog(X,i,r,`知識變現：學習帳戶 ${fm(amt)} 換成每月主動收入 +${fm(amt)}（停薪月不發，復工才領）`,'good'); }
         det.push({u,avail,amt});
       }
@@ -1469,7 +1492,8 @@ function renderGrid(st){
         if(D.used && D.used.length) bits.push(D.used.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、'));
         if(D.interest) bits.push(`含利息 ${fm(D.interest)}`);
       }
-      big = (amt===0) ? '不用付' : money(amt);
+      /* 欠著錢但帳戶掏空的人，大字寫「不用付」會讓志工以為他沒事——跟真的沒欠款分開講 */
+      big = (amt===0) ? ((D && D.owe>0) ? '收不到' : '不用付') : money(amt);
       sub = bits.join('　') || (st.subOf? st.subOf(i):'');
       if(D && D.borrowed){
         cls.push('forced');
@@ -1898,7 +1922,8 @@ function adjHold(k,i,d){
 }
 /* 人工更正：記成「第 r 月的一筆更正」，重播時會套用，之後所有月份自動跟著對 */
 /* 第 4、8 月付費解鎖之後，除了改未來的分配比例，也可以把「已經在帳戶裡的錢」搬到別格。
-   實作就是兩筆 fixes（來源 −、目的 +），重播引擎會自動在那個月套用，總額不變。 */
+   實作就是一筆 fixes（k＝來源、k2＝目的），重播引擎會自動在那個月套用；
+   來源在那個月不夠的話就有多少搬多少，總額永遠不變。 */
 let MOVEI=-1;
 function movePanel(i){
   MOVEI=i;
@@ -1930,8 +1955,7 @@ function doMove(i){
   const bal = from==='pocket' ? (E.pocket[i]+E.incoming[i]) : E.A[i][from];
   if(amt>bal){ toast(`${ANAME[from]}只有 ${fm(bal)}，搬不了那麼多`); return; }
   const r=Math.max(1,curRound());
-  CS.fixes.push({r,i,k:from,amt:-amt});
-  CS.fixes.push({r,i,k:to,amt});
+  CS.fixes.push({r,i,k:from,k2:to,amt});   /* 一筆＝一次搬移；重播時來源不夠就有多少搬多少 */
   saveCS(); render(); openDrawer('move',i);
   toast(`${ANAME[from]} → ${ANAME[to]} 搬了 ${fm(amt)}`);
 }
