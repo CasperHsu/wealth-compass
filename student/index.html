@@ -125,6 +125,19 @@ body.ready.disconnected #app{padding-top:118px}
   #mybal .bgrid{grid-template-columns:repeat(3,1fr)}
   #mybal .b .v{font-size:17px}
 }
+/* 金額有變動時，那一格閃一下＋數字從舊值滾到新值。進帳綠、出帳紅，讓學員一眼看出「哪一格剛剛動了」。 */
+@keyframes balUp{from{background:#DCEBDF;box-shadow:0 0 0 2px rgba(74,124,89,.40)}to{background:#fff;box-shadow:0 0 0 0 rgba(74,124,89,0)}}
+@keyframes balDn{from{background:#F7DED8;box-shadow:0 0 0 2px rgba(185,74,58,.38)}to{background:#fff;box-shadow:0 0 0 0 rgba(185,74,58,0)}}
+#mybal .b.up{animation:balUp .95s ease-out}
+#mybal .b.dn{animation:balDn .95s ease-out}
+@keyframes sumUp{from{background:#DCEBDF}to{background:transparent}}
+@keyframes sumDn{from{background:#F7DED8}to{background:transparent}}
+#mybal .sum b{border-radius:5px;padding:0 3px}
+#mybal .sum b.up{animation:sumUp .95s ease-out}
+#mybal .sum b.dn{animation:sumDn .95s ease-out}
+@media (prefers-reduced-motion: reduce){
+  #mybal .b.up,#mybal .b.dn,#mybal .sum b.up,#mybal .sum b.dn{animation:none}
+}
 .stu{background:var(--paper);border:2px solid var(--line);border-radius:14px;padding:10px 12px 8px;
   display:flex;flex-direction:column;min-height:126px;position:relative;transition:border-color .12s,background .12s}
 .stu .nm{display:flex;align-items:center;gap:7px;font-size:17px;font-weight:700;color:var(--green-900)}
@@ -720,6 +733,7 @@ function allocCount(a){ return ACCS.filter(k=>(a[k]||0)>0).length; }
 function setAllocAt(i,r,obj){
   if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
   CS.alloc[r][i]=obj; saveCS();
+  skipAnim();          /* 改比例會讓每個月重算、好幾格一起變，不要閃 */
 }
 
 /* ---------------------------------------------------------------------
@@ -1812,28 +1826,76 @@ function renderGrid(st){
 }
 /* 常駐帳戶列：學員隨時看得到自己六個帳戶、現金、投資、負債與兩個結算指標。
    全部從重播引擎現算，跟上面那格用的是同一份數字。 */
+/* ── 金額變動動畫 ─────────────────────────────────────────────
+   學員台是純重播模擬器：每次更新都從第 1 月重算、把整塊 #mybal 重畫。
+   所以動畫不埋在十幾個扣款點，而是「重畫前跟上一次畫的數字比對」，
+   有差的格子才跑——錢不管從薪水、開牌、事件卡還是公益來的都抓得到。
+   主控每 5 秒推一次心跳也會重畫，但數字沒變（差值 0）就不會閃，
+   跟音效那邊 stepChime 是同一個解法。
+   ★ 學員自己在明細按 +／− 、搬錢、改分配比例，會讓後面每個月重算、
+     好幾格同時變；那種情況先 skipAnim() 關掉這一次的動畫，免得整片亂跳。
+─────────────────────────────────────────────────────────────── */
+let lastBal=null, balGen=0, noAnim=false;
+function skipAnim(){ noAnim=true; }
+function reduceMotion(){
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+/* 從舊值滾到新值。gen 是保險：動畫跑到一半又被下一次重畫接手時，
+   舊的那一輪立刻停手，數字才不會卡在半路的假金額上。 */
+function rollTo(el,from,to,ms,gen){
+  if(!el) return;
+  if(reduceMotion() || from===to){ el.textContent=fm(to); return; }
+  el.textContent=fm(from);
+  const t0=performance.now();
+  (function f(t){
+    if(gen!==balGen || !el.isConnected) return;
+    const p=Math.min(1,(t-t0)/ms), e=1-Math.pow(1-p,3);   /* ease-out */
+    el.textContent=fm(Math.round(from+(to-from)*e));
+    if(p<1) requestAnimationFrame(f); else el.textContent=fm(to);
+  })(t0);
+}
 function renderBal(){
   const box=$('#mybal'); if(!box) return;
   if(!E || !CS.joined){ box.innerHTML=''; return; }
   const r=curRound()||1;
   const grow={invest:1,learn:1,give:1};
-  const cells=ACCS.map(k=>`<div class="b ${grow[k]?'grow':''}">
-      <div class="l">${ANAME[k]}</div><div class="v">${fm(E.A[0][k])}</div></div>`).join('')
-    + `<div class="b"><div class="l">現金</div><div class="v">${fm(E.pocket[0])}</div></div>`
-    + `<div class="b grow"><div class="l">持有投資</div><div class="v">${fm(assetOf(0))}</div></div>`;
-  const debt=debtOf(0);
-  const net=netOf(0), flow=flowOf(0);
+  const debt=debtOf(0), net=netOf(0), flow=flowOf(0);
   const pas=passiveOf(0,r+1), oth=otherOf(0,r+1);
+  /* 這一次要顯示的每一個數字，等一下跟上一次畫的比對 */
+  const cur={};
+  ACCS.forEach(k=>cur[k]=E.A[0][k]);
+  cur.pocket=E.pocket[0]; cur.asset=assetOf(0); cur.debt=debt; cur.net=net; cur.flow=flow;
+
+  const cells=ACCS.map(k=>`<div class="b ${grow[k]?'grow':''}" data-bk="${k}">
+      <div class="l">${ANAME[k]}</div><div class="v">${fm(cur[k])}</div></div>`).join('')
+    + `<div class="b" data-bk="pocket"><div class="l">現金</div><div class="v">${fm(cur.pocket)}</div></div>`
+    + `<div class="b grow" data-bk="asset"><div class="l">持有投資</div><div class="v">${fm(cur.asset)}</div></div>`;
   box.innerHTML=`<h4>我 的 帳 戶</h4>
     <div class="bgrid">${cells}
-      ${debt?`<div class="b neg"><div class="l">負債</div><div class="v">${fm(debt)}</div></div>`:''}
+      ${debt?`<div class="b neg" data-bk="debt"><div class="l">負債</div><div class="v">${fm(debt)}</div></div>`:''}
     </div>
     <div class="sum">
-      <span>淨資產 <b class="${net<0?'neg':''}">${fm(net)}</b></span>
-      <span>每月淨現金流 <b class="${flow<0?'neg':''}">${fm(flow)}</b></span>
+      <span>淨資產 <b class="${net<0?'neg':''}" data-bk="net">${fm(net)}</b></span>
+      <span>每月淨現金流 <b class="${flow<0?'neg':''}" data-bk="flow">${fm(flow)}</b></span>
       ${pas?`<span>被動收入 <b>${fm(pas)}</b>/月</span>`:''}
       ${oth?`<span>其他收入 <b>${fm(oth)}</b>/月</span>`:''}
     </div>`;
+
+  const prev=lastBal; lastBal=cur;
+  const skip=noAnim; noAnim=false;
+  if(!prev || skip) return;              /* 第一次畫、或這次是學員自己手動更正 */
+  balGen++; const gen=balGen;
+  Object.keys(cur).forEach(k=>{
+    const from=prev[k], to=cur[k];
+    if(from===undefined || from===to) return;
+    const cell=box.querySelector(`[data-bk="${k}"]`);
+    if(!cell) return;                     /* 例如負債歸零，那一格根本沒畫出來 */
+    const num = cell.tagName==='B' ? cell : cell.querySelector('.v');
+    cell.classList.remove('up','dn');
+    void cell.offsetWidth;                /* 強制重排，同一格連續變動才會再閃一次 */
+    cell.classList.add(to>from?'up':'dn');
+    rollTo(num, from, to, 700, gen);
+  });
 }
 function ledgerLine(i,r){
   const bits=[];
@@ -2123,7 +2185,7 @@ function setPreset(i,p){
 /* 一開始就打錯 → 回第 1 月改。改完 recompute() 會自動把每一個月重跑一次。 */
 function allocFix(i,on){
   ALLOCAT = on ? 1 : null;
-  render(); openDrawer('alloc',i);
+  skipAnim(); render(); openDrawer('alloc',i);
   if(on) toast('現在改的是第 1 月的比例，前面每個月都會跟著重算');
 }
 function closeDrawer(){ ALLOCAT=null; ALLOCI=-1; $('#drawer').classList.remove('open'); render(); }
@@ -2267,14 +2329,14 @@ function doMove(i){
   if(amt>bal){ toast(`${ANAME[from]}只有 ${fm(bal)}，搬不了那麼多`); return; }
   const r=Math.max(1,curRound());
   CS.fixes.push({r,i,k:from,k2:to,amt});   /* 一筆＝一次搬移；重播時來源不夠就有多少搬多少 */
-  play('coin');
+  play('coin'); skipAnim();
   saveCS(); render(); openDrawer('move',i);
   toast(`${ANAME[from]} → ${ANAME[to]} 搬了 ${fm(amt)}`);
 }
 function adjAcc(k,i,d){
   const r=Math.max(1,curRound());
   CS.fixes.push({r,i,k,amt:d});
-  play('tick');
+  play('tick'); skipAnim();
   saveCS(); render(); openDrawer('stu',i);
 }
 function doRepay(i){
@@ -2282,7 +2344,7 @@ function doRepay(i){
   const amt=Math.min(loanUnit(), E.loan[i]);
   if(amt<=0) return;
   CS.repay.push({r,i,amt});
-  play('coin');
+  play('coin'); skipAnim();
   saveCS(); render(); openDrawer('stu',i);
   toast(`還了 ${fm(amt)} 投資貸款`);
 }
