@@ -234,16 +234,19 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
 .coverwrap{margin:0 auto 18px;max-width:640px}
 .coverimg{width:100%;display:block;border-radius:16px;border:2px solid var(--gold);box-shadow:var(--shadow)}
 /* 規則說明兩頁 */
-.rules{width:min(880px,94vw);text-align:left;background:var(--cream);border-radius:20px;padding:34px 44px 24px;border:1.5px solid var(--gold);position:relative}
+.rules{width:min(880px,94vw);text-align:left;background:var(--cream);border-radius:20px;padding:24px 40px 18px;border:1.5px solid var(--gold);position:relative}
+/* 第 2、3 頁內容較高，880px 時 fitPanel 會先被高度卡住（左右白白空掉 400px）。
+   放寬到 1080px 讓它翻成寬度受限，三頁在螢幕上的寬度就一致了。 */
+.rules.wide{width:min(1080px,94vw)}
 .rules .eyebrow{text-align:center}
-.rules h2{font-family:var(--serif);font-size:33px;font-weight:900;letter-spacing:.12em;color:var(--green-900);text-align:center;margin-bottom:16px}
+.rules h2{font-family:var(--serif);font-size:37px;font-weight:900;letter-spacing:.12em;color:var(--green-900);text-align:center;margin-bottom:10px}
 .rules h2 .bk{color:var(--gold-deep)}
-.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin:14px 0}
-.rbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:10px 0}
+.rbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .rbox.full{grid-column:1/-1}
-.rbox h5{font-size:15.5px;color:var(--green-900);margin-bottom:5px;letter-spacing:.06em}
+.rbox h5{font-size:20px;color:var(--green-900);margin-bottom:5px;letter-spacing:.06em}
 .rbox h5 .ic{margin-right:6px}
-.rbox p,.rbox li{font-size:14.5px;line-height:1.75;color:var(--ink-soft)}
+.rbox p,.rbox li{font-size:17.5px;line-height:1.6;color:var(--ink-soft)}
 .rbox b{color:var(--ink)}
 .rbox .hl{color:var(--gold-deep);font-weight:800}
 .rbox ul{padding-left:2px;list-style:none}
@@ -251,35 +254,35 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
 .rmoney{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .rmoney span{background:var(--green-faint);border:1px solid var(--sage-soft);border-radius:999px;padding:4px 12px;font-size:13.5px;font-weight:700;color:var(--green-900)}
 .raccs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
-.racc{background:var(--green-faint);border:1px solid var(--sage-soft);border-radius:10px;padding:9px 12px;font-size:13.5px;line-height:1.6}
-.racc b{display:block;font-size:14.5px;color:var(--green-900)}
+.racc{background:var(--green-faint);border:1px solid var(--sage-soft);border-radius:10px;padding:9px 12px;font-size:16px;line-height:1.45}
+.racc b{display:block;font-size:23px;margin-bottom:3px;color:var(--green-900)}
 /* 規則頁的翻頁列排進版面流（總結簡報那組是 position:absolute 釘在底部，
    三頁高度不一樣，沿用絕對定位會壓到最後一行字） */
-.rules .slidenav{position:static;display:flex;align-items:center;justify-content:center;gap:18px;margin-top:20px}
-.rules .slidenav button{font-size:15.5px;font-weight:700;padding:11px 26px;border-radius:999px;border:1.5px solid var(--line);background:#fff;min-height:46px}
+.rules .slidenav{position:static;display:flex;align-items:center;justify-content:center;gap:18px;margin-top:13px}
+.rules .slidenav button{font-size:16px;font-weight:700;padding:9px 24px;border-radius:999px;border:1.5px solid var(--line);background:#fff;min-height:42px}
 .rules .slidenav button.primary{background:var(--green-900);border-color:var(--green-900);color:#F4F1E4}
 .rules .slidenav .dots i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--line);margin:0 4px}
 .rules .slidenav .dots i.on{background:var(--gold-deep)}
 /* 規則第 3 頁：資產收入 vs 負債支出，左綠右磚紅一眼看出兩邊 */
-.vsgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0 12px}
-.vsbox{border-radius:12px;padding:14px 18px 15px;background:#fff;border:1px solid var(--line);border-top:4px solid}
+.vsgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0 10px}
+.vsbox{border-radius:12px;padding:12px 16px 13px;background:#fff;border:1px solid var(--line);border-top:4px solid}
 .vsbox.in{border-top-color:var(--green)}
 .vsbox.out{border-top-color:var(--brick)}
-.vsbox h5{font-family:var(--serif);font-size:17px;font-weight:900;letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:baseline;gap:8px}
+.vsbox h5{font-family:var(--serif);font-size:21px;font-weight:900;letter-spacing:.08em;margin-bottom:7px;display:flex;align-items:baseline;gap:8px}
 .vsbox.in h5{color:var(--green)}
 .vsbox.out h5{color:var(--brick)}
-.vsbox h5 small{font-size:12.5px;font-weight:500;color:var(--ink-mute);letter-spacing:.02em}
+.vsbox h5 small{font-size:14px;font-weight:500;color:var(--ink-mute);letter-spacing:.02em}
 .vsbox ul{list-style:none;padding:0}
-.vsbox li{font-size:14.5px;line-height:1.7;color:var(--ink-soft);padding:4px 0 4px 20px;position:relative}
+.vsbox li{font-size:17.5px;line-height:1.55;color:var(--ink-soft);padding:3px 0 3px 20px;position:relative}
 .vsbox li::before{content:"◆";position:absolute;left:0;top:4px;font-size:9px;color:var(--gold-deep)}
 .vsbox b{color:var(--ink)}
-.frmgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.frmbox{background:var(--green-faint);border:1px solid var(--sage-soft);border-radius:12px;padding:12px 18px;text-align:center}
-.frmbox .fl{font-family:var(--serif);font-size:15px;font-weight:900;letter-spacing:.18em;color:var(--green-900)}
-.frmbox .fm2{font-size:19px;font-weight:800;color:var(--ink);margin:4px 0 2px}
+.frmgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.frmbox{background:var(--green-faint);border:1px solid var(--sage-soft);border-radius:12px;padding:10px 16px;text-align:center}
+.frmbox .fl{font-family:var(--serif);font-size:17px;font-weight:900;letter-spacing:.18em;color:var(--green-900)}
+.frmbox .fm2{font-size:22px;font-weight:800;color:var(--ink);margin:4px 0 2px}
 .frmbox .fm2 b{color:var(--gold-deep)}
-.frmbox .fn{font-size:12.5px;color:var(--ink-mute)}
-.rules .rnote{text-align:center;font-size:14.5px;line-height:1.8;color:var(--ink-soft);margin-top:12px}
+.frmbox .fn{font-size:14px;color:var(--ink-mute)}
+.rules .rnote{text-align:center;font-size:17px;line-height:1.65;color:var(--ink-soft);margin-top:10px}
 .rules .rnote b{color:var(--green-900)}
 @media (max-width:760px){ .rgrid,.vsgrid,.frmgrid{grid-template-columns:1fr} .raccs{grid-template-columns:1fr 1fr} .rules{padding:26px 20px 18px} }
 .startcard .starrow{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:8px}
@@ -909,7 +912,7 @@ const CAT = {
   /* ── 後期 9–12 月 ── */
   oldhouse:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'老屋活化・合法隔套公益出租',unit:200000,cf:40000,gms:[0,1,2.5,5],keep:true,one:true,pin:[9,10],
     flavor:'一筆低於市價的老透天釋出。合法室內裝修隔套、加入公益出租人計畫，收租又節稅的長線資產。'},
-  angel:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'產業投資天使輪',unit:100000,cf:5000,gms:[0,2,4,6],keep:true,addCf:10000,mystery:'teaser',one:true,pin:[9,10],
+  angel:{kind:'inv',tag:'機會・財富躍遷',wash:'#DDBE6C',title:'產業投資天使輪',unit:100000,cf:5000,gms:[0,2,4,6],keep:true,mystery:'teaser',one:true,pin:[9,10],
     flavor:'一間主打「重塑認知邊界、開創財務與時間自由」的財商學院正招募核心合夥人，正是入股時機。'},
   luxury:{kind:'bigspend',tag:'試煉・慾望考驗',wash:'#C96A5B',title:'大額消費的誘惑',amt:-200000,pin:[11],
     flavor:'走過旗艦店櫥窗，那台跑車／那只名錶在燈光下閃閃發亮。犒賞自己一整年的辛苦——刷下去了。'},
@@ -1158,8 +1161,8 @@ function syncSettle(){
   }).filter(Boolean);
 }
 /* 本月的固定事件（同一個月可能有兩件，例如第 4 月＝通貨膨脹＋重分配），用白話寫給志工看 */
-function syncFixed(){
-  const c=S.cfg, r=S.round, out=[];
+function syncFixed(rr){
+  const c=S.cfg, r=(rr===undefined?S.round:rr), out=[];
   if(!S.started || r<1 || r>c.rounds) return out;
   if(r===c.mindlessMonth) out.push({id:'mindless',title:'無意識消費',
     brief:'有 2 個以上帳戶的人免執行。少於 2 個帳戶＝月光族，從這個月起每到月底，把他手上現金與生活帳戶剩下的錢全部收回。'});
@@ -1181,6 +1184,19 @@ function syncFixed(){
     brief:`向每一位收 ${fm(c.accidentCost)}。捐款額每 ${fm(c.charityUnit)} 就有貴人相助保留 ${fm(c.charityCover)}；從貢獻帳戶捐過 ${fm(c.charityUnit)} 的人就全額保住、不用付。`});
   if(r===c.reallocA || r===c.reallocB) out.push({id:'realloc',title:'預算重分配窗口',
     brief:`可以重新調整六個帳戶的分配比例，也可以把已經存進帳戶裡的錢搬到別格（總額不變）。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費，用學習帳戶的錢付只要 ${fm(c.unlockFeeLearn)}`:'這次免費'}。`});
+  return out;
+}
+/* 斷線補算用的月份表：整場 12 個月分別有哪些固定事件，只送代號與時點、不送說明文字（約 0.5KB）。
+   學員台若有幾個月沒連上，帳本會缺那幾個月、重播時整月被跳過（薪水沒領、生活費沒付、
+   事件沒發生），數字會靜靜地錯掉。有了這張表就能自己把那幾個月補算完——薪水、生活費、
+   停薪、通膨、結婚生子、重大事故、抽銀根都算得回來；補不回來的只有當月隨機抽到的那張牌。 */
+function syncSched(){
+  const out={};
+  if(!S.started) return out;
+  for(let r=1;r<=S.cfg.rounds;r++){
+    const a=syncFixed(r).map(x=>({id:x.id, when:x.when||''}));
+    if(a.length) out[r]=a;
+  }
   return out;
 }
 /* 「現在這一步要做什麼」——副控畫面正中央那句話 */
@@ -1216,6 +1232,12 @@ function buildSyncState(){
            charityCover:c.charityCover, accidentCost:c.accidentCost,
            unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn },
     todo:syncTodo(), fixed:syncFixed(),
+    /* 斷線補算包：學員台缺哪幾個月就照這份自己補回來（見 syncSched） */
+    back:{ baseExpense:c.expense,
+           inflationMonth:c.inflationMonth, inflationExtra:c.inflationExtra,
+           marryMonth:c.marryMonth, marryExtra:c.marryExtra,
+           joblessMonth:c.joblessMonth, joblessLen:c.joblessLen,
+           sched:syncSched() },
     card:(S.phase==='drawn'||S.phase==='expense') ? syncFace(S.recap[S.round]) : null,
     settle:syncSettle() };
 }
@@ -2069,7 +2091,7 @@ function payoffHTML(){
       '帳戶裡的錢<b class="hl">還是你的</b>，可以放心進結算',
       '<b class="hl">還清之後不用再付利息</b>——現金流當場變好看'],
     '一路靠借錢撐',[
-      `依序從<b class="hl">現金 → 生活 → 投資 → 學習 → 儲蓄 → 娛樂 → 貢獻</b>扣，扣到還完為止`,
+      `依序從<b class="hl">現金 → 生活 → 投資 → 學習 → 儲蓄 → 娛樂 → 第六格</b>扣，扣到還完為止`,
       '<b class="hl">帳戶可能被清空</b>——你以為手上有錢，其實那些錢是別人的',
       '還不完的部分<b class="hl">留著進結算</b>，繼續壓著你的淨資產'])
   , '借來的錢從來不是你的錢，只是你還沒還的帳。');
@@ -2115,12 +2137,13 @@ function charityHTML(){
 }
 function accidentHTML(){
   const cfg=S.cfg;
-  const c=fixShell('固定事件・第 '+cfg.accidentMonth+' 月','重大事故','一場重大事故從天而降，需要支付 '+fm(cfg.accidentCost)+' 元。這時你才知道，平時種下的善意值多少。','#C96A5B');
+  const c=fixShell('固定事件・第 '+cfg.accidentMonth+' 月','重大事故',
+    '一場重大事故從天而降，需要支付 <b style="font-size:1.85em;color:var(--brick);font-weight:900;line-height:1">'
+    +fm(cfg.accidentCost)+'</b> 元。這時你才知道，平時種下的善意值多少。','#C96A5B');
   return cardShell(c, branches(
     '曾在公益事件捐贈',[
       `捐款額每 <b class="hl">${fm(cfg.charityUnit)}</b> ＝ 貴人相助<b class="hl">保留 ${fm(cfg.charityCover)}</b> 支出`,
-      `從貢獻帳戶捐 ${fm(cfg.charityUnit)}（記 ${fm(cfg.charityUnit*cfg.giveBoost)}）→ <b class="hl">${fm(cfg.accidentCost)} 全額保住</b>`,
-      `用現金捐的人要捐滿 ${fm(Math.ceil(cfg.accidentCost/cfg.charityCover)*cfg.charityUnit)} 才全額保住`],
+      `捐得夠多的人 → <b class="hl">${fm(cfg.accidentCost)} 全額保住</b>，一毛都不用付`],
     '一毛都沒捐',[
       '無人伸出援手',
       `<b class="hl">全額支付 ${fm(cfg.accidentCost)}</b>，依序扣光各帳戶`,
@@ -2319,7 +2342,7 @@ function rulesHTML(i){
     </div>
     ${nav('closeOverlay()','rulesNav(1)')}
   </div>`;
-  if(i===1) return `<div class="rules">
+  if(i===1) return `<div class="rules wide">
     <div class="eyebrow">遊戲規則・第 2 頁</div>
     <h2>預 算 分 配</h2>
     <div class="rgrid">
@@ -2331,9 +2354,9 @@ function rulesHTML(i){
           <div class="racc"><b>🏰 儲蓄</b>儲蓄險、定存、緊急備用金</div>
           <div class="racc"><b>🌱 投資</b>購置股票、房產、設備等資產</div>
           <div class="racc"><b>📖 學習</b>教育／培訓基金</div>
-          <div class="racc" style="display:flex;align-items:center;justify-content:center"><b style="color:var(--ink-mute);font-size:22px;letter-spacing:.14em">…… 等</b></div>
+          <div class="racc" style="display:flex;align-items:center;justify-content:center"><b style="color:var(--ink-mute);font-size:26px;letter-spacing:.14em">…… 等</b></div>
         </div>
-        <p style="font-size:13px;color:var(--ink-mute);margin-top:8px">＊以上為帳戶分類舉例，還有其他可能性——可依自己的狀況調整。</p></div>
+        <p style="font-size:15px;color:var(--ink-mute);margin-top:8px">＊以上為帳戶分類舉例，還有其他可能性——可依自己的狀況調整。</p></div>
       <div class="rbox full"><h5><span class="ic">🏦</span>銀行借貸</h5>
         <p>每 <b class="hl">1 萬</b>為單位、<b class="hl">月息 10%</b>（利息計入每月生活支出）；借款總額<b>不得超過每月現金流的 ${cfg.loanCapX} 倍</b>。</p></div>
     </div>
@@ -2341,7 +2364,7 @@ function rulesHTML(i){
   </div>`;
   /* 第 3 頁：教學員怎麼在自己那張紙上記帳。
      左右兩欄刻意對稱——會把錢帶進來的 vs 會把錢帶走的，下面兩格才是最後要比的兩個數字。 */
-  return `<div class="rules">
+  return `<div class="rules wide">
     <div class="eyebrow">遊戲規則・第 3 頁</div>
     <h2>怎 麼 記 在 你 的 紙 上</h2>
     <div class="vsgrid">
@@ -2359,12 +2382,12 @@ function rulesHTML(i){
         </ul></div>
     </div>
     <div class="frmgrid">
-      <div class="frmbox"><div class="fl">每 月 淨 現 金 流</div>
-        <div class="fm2">總收入 <b>−</b> 總支出</div>
-        <div class="fn">這個月結束，你會多出多少（或少掉多少）</div></div>
       <div class="frmbox"><div class="fl">淨 資 產</div>
         <div class="fm2">現金 <b>＋</b> 投資總額 <b>−</b> 負債總額</div>
         <div class="fn">你現在真正擁有多少</div></div>
+      <div class="frmbox"><div class="fl">每 月 淨 現 金 流</div>
+        <div class="fm2">總收入 <b>−</b> 總支出</div>
+        <div class="fn">這個月結束，你會多出多少（或少掉多少）</div></div>
     </div>
     <p class="rnote">每個月結束，就在自己的紙上把這兩個數字更新一次——<b>最後比的就是這兩個</b>。<br>
       投資開牌拿到的錢、跟銀行借到的錢，<b>由你自己決定要放進哪一個帳戶</b>，記得一起記下來。</p>
@@ -3049,7 +3072,8 @@ function renderSide(){
     </ul>
     <h4>公告欄</h4>
     ${FIXNOTE[r]?`<div class="notice alert"><span class="ic">${FIXNOTE[r].slice(0,2)}</span><span>${FIXNOTE[r].slice(2)}</span></div>`:''}
-    ${jobless?'<div class="notice alert"><span class="ic">🚫</span><span><b>停薪中</b>：薪水與知識變現（主動收入）都停發；被動收入與投資帶來的其他現金流照領。</span></div>':''}
+    ${jobless?`<div class="notice alert"><span class="ic">🚫</span><span><b>停薪中</b>：薪水與知識變現（主動收入）都停發；被動收入與投資帶來的其他現金流照領。<br>
+      <b>儲蓄帳戶每支付 ${fm(cfg.joblessSaveUnit)} ＝ 抵掉 ${fm(cfg.joblessSaveCover)} 生活費（1 比 10）</b>——這個月生活費 <b>${fm(curExpense())}</b>，只要 <b>${fm(Math.ceil(curExpense()/cfg.joblessSaveCover)*cfg.joblessSaveUnit)}</b> 就全額抵完；抵不完的差額照順序從帳戶收。</span></div>`:''}
     ${S.mindlessOn?'<div class="notice"><span class="ic">🌙</span><span><b>無意識消費生效中</b>：帳戶數 <2 者每月底現金＋生活歸零。</span></div>':''}
     ${S.expenseBonus>0?`<div class="notice"><span class="ic">${(S.preFix||{}).marry?'👶':'📈'}</span><span>${expenseWhy()}，固定支出 <b>${fm(curExpense())}</b>／月</span></div>`:''}
     ${pendList.map(p=>`<div class="notice gold"><span class="ic">🚀</span><span>「${CAT[p.id].title}」<b>第 ${p.due} 月開牌</b></span></div>`).join('')}

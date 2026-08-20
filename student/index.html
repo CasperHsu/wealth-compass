@@ -8,7 +8,7 @@
 <title>視界致富羅盤・我的帳本</title>
 <style>
 /* =====================================================================
-   視界致富羅盤・副控台（組長銀行台）
+   視界致富羅盤・學員台（線上學員自己的帳本；由副控台分叉而來）
    ---------------------------------------------------------------------
    設計三原則（規格書第八節，逐條驗收）：
      易讀 — 指令字 ≥32px、金額 ≥40px、一頁只有一個主要指令、顏色語意固定
@@ -343,7 +343,131 @@ body.ready.disconnected #app{padding-top:118px}
 const $=s=>document.querySelector(s);
 const fm=n=>{ n=Math.round(n||0); return (n<0?'-':'')+Math.abs(n).toLocaleString('en-US'); };
 const money=n=>'＄'+fm(n);
-const LET='ABCDEF';
+/* =====================================================================
+   音效（與主控台同一套合成引擎，沒有任何外部檔案）
+   ---------------------------------------------------------------------
+   ★ 手機的自動播放限制：AudioContext 一開始是 suspended，要等使用者
+     碰過畫面才出得了聲。學員一定會先按「加入」，那一下就解鎖了。
+   ★ SAMPLES 可以放 base64 mp3 蓋掉合成音（跟主控台同一個介面）。
+===================================================================== */
+const SAMPLES = {};   /* 例：SAMPLES.salary='data:audio/mp3;base64,....' */
+let AC=null, MG=null;
+function ac(){
+  if(!AC){
+    try{
+      AC=new (window.AudioContext||window.webkitAudioContext)();
+      const comp=AC.createDynamicsCompressor();
+      comp.threshold.value=-18; comp.ratio.value=6;
+      MG=AC.createGain(); MG.gain.value=.7;
+      MG.connect(comp); comp.connect(AC.destination);
+    }catch(e){}
+  }
+  if(AC && AC.state==='suspended') AC.resume();
+  return AC;
+}
+function envG(t,a,d,peak){
+  const g=AC.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak,0.001),t+a);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+  g.connect(MG); return g;
+}
+function bellN(f,dt,dur,vol){
+  if(!ac()) return; const t=AC.currentTime+dt;
+  [[1,1],[2.42,.32],[5.11,.1]].forEach(([m,w])=>{
+    const o=AC.createOscillator(); o.type='sine'; o.frequency.value=f*m;
+    o.connect(envG(t,.012,dur*(m>3?.4:m>2?.6:1),vol*w));
+    o.start(t); o.stop(t+dur+.1);
+  });
+}
+function thud(f0,f1,dt,dur,vol){
+  if(!ac()) return; const t=AC.currentTime+dt;
+  const o=AC.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(f0,t);
+  o.frequency.exponentialRampToValueAtTime(f1,t+dur*.85);
+  o.connect(envG(t,.012,dur,vol)); o.start(t); o.stop(t+dur+.1);
+}
+function paper(dt,dur,freq,vol){
+  if(!ac()) return; const t=AC.currentTime+dt;
+  const len=Math.max(1,Math.floor(AC.sampleRate*dur));
+  const buf=AC.createBuffer(1,len,AC.sampleRate);
+  const ch=buf.getChannelData(0);
+  for(let i=0;i<len;i++) ch[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.2);
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=freq; bp.Q.value=.8;
+  const g=envG(t,.006,dur,vol);
+  src.connect(bp); bp.connect(g); src.start(t);
+}
+const SYNTH = {
+  salary(){ bellN(1046,0,.7,.09); bellN(1318,.1,.7,.09); bellN(1568,.2,1.1,.11);
+            bellN(2093,.32,.5,.045); paper(.05,.14,5200,.02); },
+  coin(){ bellN(2093,0,.16,.05); bellN(2637,.06,.2,.05); },
+  expense(){ thud(170,72,0,.32,.11); paper(.02,.16,900,.045); },
+  flip(){ paper(0,.15,850,.07); paper(.06,.12,1500,.05); },
+  boom(){ thud(96,42,0,.85,.15); paper(0,.4,180,.06); thud(64,36,.12,.9,.1); },
+  alarm(){ if(!ac()) return; const t0=AC.currentTime;
+    [[880,0],[587,.26],[880,.52],[587,.78],[880,1.04]].forEach(([f,dt])=>{
+      const o=AC.createOscillator(); o.type='square'; o.frequency.value=f;
+      o.connect(envG(t0+dt,.02,.24,.05)); o.start(t0+dt); o.stop(t0+dt+.32);
+    });
+    thud(150,58,1.35,.6,.1); },
+  good(){ bellN(659,0,.5,.07); bellN(830,.09,.5,.07); bellN(988,.18,.8,.08); },
+  fanfare(){ [523,659,784].forEach((f,i)=>bellN(f,i*.1,.9,.08));
+             bellN(1046,.32,1.5,.1);
+             [698,880,1046,1397].forEach((f,i)=>bellN(f,.62+i*.09,1.3,.07)); },
+  round(){ bellN(784,0,1.3,.06); bellN(988,.14,1.6,.06); },
+  tick(){ paper(0,.04,3400,.05); bellN(1976,0,.07,.022); },
+  nope(){ thud(210,140,0,.13,.05); }    /* 買不起／點不動時的短促低音 */
+};
+function play(name){
+  if(!name) return;
+  if(CS && CS.muted) return;
+  if(SAMPLES[name]){ try{ new Audio(SAMPLES[name]).play(); }catch(e){} return; }
+  try{ SYNTH[name] && SYNTH[name](); }catch(e){}
+}
+/* 這一步該配什麼聲音：先看步驟代號，認不出來才退回看它是收錢還是發錢。 */
+function stepSound(st){
+  if(!st) return '';
+  const id=st.id||'';
+  if(id==='final') return 'fanfare';
+  if(id==='salary') return 'salary';
+  if(id==='alloc' || id==='alloc0') return 'coin';
+  if(id==='expense') return 'expense';
+  if(id==='wait' || id==='nocard') return '';        /* 等待中，不要吵 */
+  if(id.indexOf('st_')===0)   return st.mode==='take' ? 'boom' : 'good';   /* 開牌：要追繳 vs 收錢 */
+  if(id.indexOf('card_')===0){                       /* 事件卡：卡面已經顯示了，聲音不會洩底 */
+    if(st.mode==='units') return 'flip';             /* 投資機會：翻牌聲，等他決定 */
+    if(st.mode==='take')  return 'expense';          /* 要他掏錢 */
+    if(st.mode==='give')  return 'coin';             /* 有錢進來 */
+    return 'flip';                                   /* 平安卡 */
+  }
+  if(id.indexOf('fx_')===0){
+    const k=id.slice(3);
+    if(k==='stress') return 'alarm';
+    if(k==='accident' || k==='payoff' || k==='jobless') return 'boom';
+    if(k==='know') return 'fanfare';
+    if(k==='charity') return 'good';
+    if(k==='realloc') return 'coin';
+    return 'expense';                                 /* 通膨、結婚生子、無意識消費 */
+  }
+  return st.mode==='take' ? 'expense' : st.mode==='give' ? 'coin' : '';
+}
+/* 只有「真的換了一步」才出聲。主控每 5 秒推一次心跳，不擋的話會變成每 5 秒叮一聲。
+   剛打開頁面的第一次也不出聲，免得一進來就突然有聲音。 */
+let lastSnd='';
+function stepChime(){
+  const st=STEPS[CS.cur.i];
+  const key = curRound()+'|'+(st?st.id:'')+'|'+CS.cur.i;
+  if(key===lastSnd) return;
+  const first = (lastSnd==='');
+  lastSnd=key;
+  if(!first) play(stepSound(st));
+}
+function toggleMute(){
+  CS.muted=!CS.muted; saveCS();
+  if(!CS.muted) play('coin');
+  openDrawer('set');
+}
 let toastT=null;
 function toast(msg){
   const t=$('#toast'); t.textContent=msg; t.classList.add('on');
@@ -365,12 +489,20 @@ function toast(msg){
    repay  ：主動償還投資貸款，一筆 {r,i,amt}
 ===================================================================== */
 /* 規則改版就換鍵：舊帳本的月份表與卡片金額都不一樣，重播會算出錯的數字 */
-const CKEY='zfl-student-v3';
+const CKEY='zfl-student-v4';
 const MAXSTU=1;      /* 學員版：這台只管你自己一個人 */
 let CS=null, E=null;                       /* CS＝存下來的帳本；E＝重算出來的當下狀態 */
 
 const ACCS  = ['life','fun','save','invest','learn','give'];
-const ANAME = {life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',give:'貢獻',pocket:'現金'};
+/* 第六格刻意不預設叫「貢獻」——那一格的力量要學員自己想到才有。
+   用 getter 讓 24 處顯示自動跟著他取的名字走，不必逐處改。 */
+const ANAME = {life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',pocket:'現金',
+  get give(){ return (typeof CS!=='undefined' && CS && CS.giveName) ? CS.giveName : '第六格'; }};
+/* 名字要有「留一份給別人」的意思，才認列成貢獻帳戶（公益倍數＋重大事故的貴人相助）。
+   取別的名字就只是一個普通帳戶——想不到要留這一格的人，就享受不到那道保護。 */
+const GIVE_RE=/公益|捐款|捐贈|捐獻|貢獻|奉獻|慈善|佈施|布施|愛心/;
+function isGiveAcc(){ return GIVE_RE.test((CS&&CS.giveName)||''); }
+function setGiveName(v){ if(!CS) return; CS.giveName=(v||'').trim().slice(0,6); saveCS(); }
 const ACOLOR= {life:'#4A7C59',fun:'#C7784A',save:'#46789B',invest:'#97742A',learn:'#7C68A6',give:'#B4566B'};
 /* 扣款順序：與主控台 index.html:1366 完全相同，兩端算出來的數字才會一樣 */
 /* 錢不夠時動用帳戶的順序（2026-08-11 改版：現金排最前、娛樂進鏈、儲蓄排在學習後面） */
@@ -380,8 +512,8 @@ const PRESET= { ml:{life:0,fun:0,save:0,invest:0,learn:0,give:0},
                 std:{life:60,fun:10,save:10,invest:10,learn:5,give:5} };
 
 function newLedger(){
-  return { v:3, room:'VISION', table:0, n:1, joined:false, names:['','','','','',''],
-           alloc:{}, mlog:{}, marks:{}, fixes:[], repay:[],
+  return { v:4, room:'VISION', table:0, n:1, joined:false, names:['','','','','',''],
+           alloc:{}, mlog:{}, marks:{}, fixes:[], repay:[], back:null, muted:false, giveName:'',
            cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
 }
 function z6(){ return [0,0,0,0,0,0]; }
@@ -393,7 +525,7 @@ function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e
 function loadCS(){
   /* v1 的舊帳本沒有帳戶資料，算不出正確數字，一律作廢重來（順便解掉「打開就是上一場」） */
   try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
-       const o=JSON.parse(raw); return (o&&o.v===3)?o:null; }catch(e){ return null; }
+       const o=JSON.parse(raw); return (o&&o.v===4)?o:null; }catch(e){ return null; }
 }
 function nameOf(i){ return (CS.names[i]||'').trim() || '你'; }
 
@@ -620,6 +752,41 @@ function absorbManual(){
                       settle:[], fixed:[], nums:null, rate:.1, unit:10000, capX:10,
                       per:2000, cover:10000, ph:4 };
 }
+/* ---------------------------------------------------------------------
+   斷線補算。學員中途斷線幾個月，帳本就會缺那幾個月的事實，重播時
+   `if(!f) continue` 會把整個月跳過——薪水沒領、生活費也沒付，數字錯了
+   畫面上還完全看不出來。這裡照主控廣播的月份表把洞補起來。
+   補算的月份一律當作「只領薪水、付固定支出，沒有投資也沒有借款」，
+   補不回來的只有當月隨機抽到的那張牌（好事、小支出、投資機會）。
+   ★ 只補「他連上過之後」的洞：從沒連上過的人（中途才開連結進來）不補，
+     否則會被灌一段他根本沒玩過的假歷史。
+--------------------------------------------------------------------- */
+function fillGaps(){
+  if(ST && ST.back) CS.back=ST.back;         /* 留一份在本機，斷線期間也還在 */
+  const b=CS.back;
+  if(!b || !ST || !ST.started) return 0;
+  const now=ST.round; if(now<2) return 0;
+  let first=0;
+  for(const k in CS.mlog){ const r=+k; if(!first || r<first) first=r; }
+  if(!first) return 0;                       /* 從沒連上過 → 不補 */
+  let n=0;
+  for(let r=first+1; r<now; r++){
+    if(CS.mlog[r]) continue;
+    CS.mlog[r]={
+      income: ST.income,
+      expense: b.baseExpense + (r>=b.inflationMonth ? b.inflationExtra : 0)
+                             + (r>=b.marryMonth     ? b.marryExtra     : 0),
+      jobless: (r>=b.joblessMonth && r<b.joblessMonth+b.joblessLen),
+      card:null, settle:[], fixed:(b.sched && b.sched[r]) || [],
+      nums:ST.nums||null, rate:loanRate(), unit:loanUnit(), capX:loanCapX(),
+      per:funPer(), cover:funCover(),
+      ph:4,                                   /* 整個月五個階段都算完 */
+      auto:true                               /* 明細上要標出來，別讓他以為自己有玩到 */
+    };
+    n++;
+  }
+  return n;
+}
 function maxRound(){
   let m=0; for(const k in CS.mlog){ const r=+k; if(r>m) m=r; } return m;
 }
@@ -783,6 +950,8 @@ function recompute(){
     if(upto>=3) phDrawn(X,r,f);
     if(upto>=4) phExpense(X,r,f);
     applyFixes(X,r);
+    if(f.auto) for(let i=0;i<MAXSTU;i++)
+      elog(X,i,r,'這個月你沒連上線，系統自動補算：只領薪水、付固定支出，沒有投資也沒有借款','warn');
   }
   return X;
 }
@@ -855,7 +1024,7 @@ function phSalary(X,r,f){
       else{
         /* 開牌拿到的錢，由學員自己決定進哪一格（預設投資帳戶）——規則第 3 頁講的那條 */
         const pay=u*(s.perUnit||0);
-        const acc=acctOf(markGet(r,'salary','st_'+s.id),i,'invest');
+        const acc=acctFor(markGet(r,'salary','st_'+s.id),i,r,'invest');
         X.A[i][acc]+=pay; d2.push({amt:pay,u,owe:0,acc});
         elog(X,i,r,`${s.title} 開牌：${u} 單位 × ${fm(s.perUnit)} ＝ ${fm(pay)} 進${ANAME[acc]}帳戶`,'good');
       }
@@ -911,13 +1080,19 @@ function phDrawn(X,r,f){
     X.det[r+'|drawn|card_'+c.id]=det;
     return;
   }
-  /* 好消息：發錢，照分配比例分流 */
+  /* 好消息：發錢。額外收入由學員自己決定進哪一格（只能選他有設定比例的帳戶）；
+     完全沒分帳戶的人維持舊行為，錢就放在身上當現金。 */
   if(c.amt>0){
-    const det=[];
+    const det=[], mk=markGet(r,'drawn','card_'+c.id);
     for(let i=0;i<MAXSTU;i++){
-      const sp=spread(X,i,r,c.amt);
-      det.push({amt:c.amt, parts:sp.parts, rest:sp.rest});
-      elog(X,i,r,`${c.title} ＋${fm(c.amt)}`,'good');
+      if(allocSum(allocOf(i,r))<=0){
+        X.pocket[i]+=c.amt; det.push({amt:c.amt, acc:'pocket'});
+        elog(X,i,r,`${c.title} ＋${fm(c.amt)}（沒有分帳戶，放在身上）`,'good');
+      }else{
+        const acc=acctFor(mk,i,r,'save');
+        X.A[i][acc]+=c.amt; det.push({amt:c.amt, acc});
+        elog(X,i,r,`${c.title} ＋${fm(c.amt)} 進${ANAME[acc]}帳戶`,'good');
+      }
     }
     X.det[r+'|drawn|card_'+c.id]=det; return;
   }
@@ -1025,10 +1200,13 @@ function phFixed(X,r,f,fx,nm){
       }
       break;
     case 'charity':
-      /* 貢獻帳戶付得起的份數算 ×giveBoost 捐款額，超出的份數用其他的錢付、只算 1:1 */
+      /* 貢獻帳戶付得起的份數算 ×giveBoost 捐款額，超出的份數用其他的錢付、只算 1:1。
+         ★ 第六格要被學員命名成「公益／捐款／貢獻」之類，才算貢獻帳戶；
+           取別的名字＝那格是普通帳戶，不從那裡扣、也沒有倍數。 */
+      const isG=isGiveAcc();
       for(let i=0;i<MAXSTU;i++){
-        const avail=X.A[i].give, u=m.cnt[i]||0, amt=u*nm.charityUnit;
-        const boost=nm.giveBoost||1;
+        const avail=isG?X.A[i].give:0, u=m.cnt[i]||0, amt=u*nm.charityUnit;
+        const boost=isG?(nm.giveBoost||1):1;
         const fromGive=Math.min(amt, Math.floor(avail/nm.charityUnit)*nm.charityUnit);
         const fromCash=amt-fromGive;
         const d={u,avail,amt,fromGive,fromCash,credit:0,used:[],borrowed:0,short:0};
@@ -1161,7 +1339,7 @@ function setupAllocStep(){
     title:'你的收入要怎麼分到六個帳戶？',
     note:'點下面那格，把你想分的百分比打進去。不分帳戶、只分兩三個都可以——照你真實的生活狀況分。'
         +'設好就等講師開始，之後畫面會自己跟著他走。',
-    why:'比例先想好，第一次領薪就能直接照帳戶把籌碼分對，不用當場停下來算。' };
+    why:'比例先想好，第一次領薪就能直接照帳戶把錢分對，不用當場停下來算。' };
 }
 /* 分配收入。排在發薪前面：先看這個月的錢會怎麼分，再照著發。 */
 function allocStep(r){
@@ -1176,7 +1354,7 @@ function allocStep(r){
   }
   return { id:'alloc', mode:'alloc', badge:'先看', tone:'',
     title:'這個月的錢，會這樣分',
-    note:'下面已經照你設定的比例算好了。等一下領錢的時候，照這些數字把籌碼放進帳戶。'
+    note:'下面已經照你設定的比例算好了。等一下領錢的時候，照這些數字記進你的帳戶。'
         +(anySet?'':'　你目前沒有分帳戶，錢會全部放在身上。')
         +'　想改比例、或一開始打錯了，點下面那格。',
     why:'錢一進來就先分流，剩下的才是能花的。' };
@@ -1219,7 +1397,7 @@ function settleStep(s,r){
       note: !anyone ? '你沒有投這一張，直接按完成就好。'
         : owe ? ('你投進去的錢全部收不回來，而且每單位還要再賠 '+fm(owe)+'。'
                 +'下面已經算好你要付多少、從哪個帳戶出——先扣投資帳戶，不夠才動其他帳戶，再不夠就是被迫負債。')
-              : '你投進去的錢全部收不回來。把桌上那筆投資籌碼收掉。',
+              : '你投進去的錢全部收不回來。把那筆投資從你的紙上劃掉。',
       why:'同一張「危機入市」，有人翻倍有人歸零——這就是為什麼投資前要先看懂自己承受得起多少。',
       amountOf:(i)=>((h&&h.units[i])||0)*owe,
       subOf:(i)=>{ const u=(h&&h.units[i])||0;
@@ -1291,12 +1469,14 @@ function expenseStep(r){
    學員台一律換成第二人稱；沒對到的才退回原文。 */
 const STU_BRIEF={
   mindless:'有 2 個以上帳戶的人免執行。少於 2 個帳戶＝月光族，從這個月起每到月底，手上的現金和生活帳戶剩下的錢會全部被收回。',
-  jobless:'公司倒了。接下來兩個月你沒有主動收入——薪水和知識變現都停；投資的被動收入與其他現金流照領。'
-         +'儲蓄帳戶每付 10,000 就可以免掉當月的固定支出。'
+  /* 寫成函式的可以吃講師在 ⚙ 設定臨場改過的數字，不會像寫死的一樣過時 */
+  jobless:nm=>'公司倒了。接下來兩個月你沒有主動收入——薪水和知識變現都停；投資的被動收入與其他現金流照領。'
+         +`你的儲蓄每 ${fm(nm.joblessSaveUnit)} 可以抵 ${fm(nm.joblessSaveCover)} 生活費（1 比 10），系統會自動抵到剛好夠、不會多扣；抵不完的差額照順序從帳戶收。`,
 };
 function fixedStep(f,r){
   const nm=nums();
-  const base={ id:'fx_'+f.id, title:f.title, note:STU_BRIEF[f.id]||f.brief,
+  const sb=STU_BRIEF[f.id];
+  const base={ id:'fx_'+f.id, title:f.title, note:(typeof sb==='function'?sb(nm):sb)||f.brief,
     badge: f.when==='pre' ? '月初事件' : f.when==='preexp' ? '繳費前' : '月底事件' };
   switch(f.id){
     case 'mindless':
@@ -1347,13 +1527,15 @@ function fixedStep(f,r){
       return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, acct:'give', alsoCash:true,
         title:'公益勸募', money:null,
         note:'想捐就點幾下，一下 '+fm(nm.charityUnit)+'；也完全可以不捐。'
-            +'貢獻帳戶付得起的部分算 '+(nm.giveBoost||1)+' 倍捐款額，超出的部分從你其他的錢出、只算 1 比 1——'
-            +'這些系統會自己算。累計的捐款額會記住，後面某個月用得到。',
+            +(isGiveAcc()
+               ? `你的「${ANAME.give}」帳戶付得起的部分算 ${(nm.giveBoost||1)} 倍捐款額，超出的部分從你其他的錢出、只算 1 比 1——這些系統會自己算。`
+               : '')
+            +'累計的捐款額會記住，後面某個月用得到。',
         why:'佈施看似給出去，其實是替自己佈下一張安全網——專款專用的人，同樣一千塊效果差十倍。' });
     case 'accident':
       return Object.assign(base,{ mode:'take', money:nm.accidentCost,
         note:'下面已經把你以前的捐款額換算成「貴人相助保留多少」了，照那個金額付。'
-            +'捐款額每 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'；從貢獻帳戶捐過 '+fm(nm.charityUnit)+' 的人完全不用付。',
+            +'捐款額每 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'；捐得夠多的人完全不用付。',
         why:'你平時種下的善意，會在最壞的時刻回來接住你。' });
     case 'realloc':
       return Object.assign(base,{ mode:'alloc', allocFor:r+1, badge:'重分配',
@@ -1401,18 +1583,34 @@ function markOf(st){
   if(!CS.marks[k].acct) CS.marks[k].acct=e6();
   return CS.marks[k];
 }
+/* 額外收入只能進「他自己有設定比例」的帳戶——沒在用的格子不該憑空冒出錢。
+   完全沒分帳戶的人（月光族）就全部給他選，不然他會沒得選。
+   ★ 引擎與畫面共用這兩個函式，兩邊才不會一個寫「進投資」一個實際進生活。 */
+function allowedAccs(i,r){
+  const al=allocOf(i,r), has=ACCS.filter(k=>(al[k]||0)>0);
+  return has.length?has:ACCS.slice();
+}
+function acctFor(m,i,r,dflt){
+  const allow=allowedAccs(i,r);
+  const k=(m&&m.acct)?m.acct[i]:'';
+  if(allow.indexOf(k)>=0) return k;
+  return allow.indexOf(dflt)>=0 ? dflt : allow[0];
+}
 /* 「這筆錢放進哪一格」的小列。只有真的有錢要落地時才出現，
-   預設那一格先亮著——學員沒特別說，組長一下都不用點，節奏不會被拖慢。 */
-function acctPick(st,i,dflt,label,narrow){
-  const cur=acctOf(markOf(st),i,dflt);
+   預設那一格先亮著——學員沒特別說，一下都不用點，節奏不會被拖慢。
+   onlyAlloc＝額外收入用，只列他有設定比例的帳戶。 */
+function acctPick(st,i,dflt,label,narrow,onlyAlloc){
+  const r=curRound();
+  const list=onlyAlloc?allowedAccs(i,r):ACCS;
+  const cur=onlyAlloc?acctFor(markOf(st),i,r,dflt):acctOf(markOf(st),i,dflt);
   /* narrow＝這一格右下角還有「−／借」小按鈕，要留位置給它們，不然會壓到 */
   return `<div class="apick${narrow?' narrow':''}"><span class="al">${label}</span>`
-    + ACCS.map(k=>`<button class="${k===cur?'on':''}" onclick="event.stopPropagation();setAcct(${i},'${k}')">${ANAME[k]}</button>`).join('')
+    + list.map(k=>`<button class="${k===cur?'on':''}" onclick="event.stopPropagation();setAcct(${i},'${k}')">${ANAME[k]}</button>`).join('')
     + `</div>`;
 }
 function setAcct(i,k){
   const st=STEPS[CS.cur.i]; if(!st) return;
-  markOf(st).acct[i]=k; saveCS(); render();
+  markOf(st).acct[i]=k; play('tick'); saveCS(); render();
 }
 /* 這一步、這位學員的計算明細（引擎重播時算出來的，畫面直接顯示，不會跟帳算的不一樣） */
 function detOf(st,i){ const d=E&&E.det[markKey(st)]; return d? d[i]||null : null; }
@@ -1424,6 +1622,8 @@ function maxUnitsFor(i,st,D){
 }
 function applyState(){
   absorbState();
+  const gaps=fillGaps();
+  if(gaps>0) toast(`有 ${gaps} 個月沒連上線，已自動補算（只領薪水、付固定支出）`);
   const key=phaseKey();
   if(CS.cur.k!==key){ CS.cur={ k:key, i:0 }; }   /* 講師推進到下一階段 → 副控自動跳到第一步 */
   render(); saveCS(); report();
@@ -1435,6 +1635,7 @@ function render(){
   STEPS=buildSteps();
   if(CS.cur.i>=STEPS.length) CS.cur.i=Math.max(0,STEPS.length-1);
   renderTop(); renderOrder(); renderBal(); renderBar();
+  stepChime();
 }
 function phaseName(){
   if(CS.manual) return '手動模式';
@@ -1506,8 +1707,10 @@ function renderGrid(st){
       sub = st.subOf? st.subOf(i) : '';
       if(!sub && D && D.parts && D.parts.length)
         sub = '會分成 '+D.parts.map(p=>ANAME[p.k]+' '+fm(p.a)).join('、')+(D.rest>0?('、現金 '+fm(D.rest)):'');
-      /* 開牌拿到的投資報酬：學員自己決定進哪一格 */
-      if(st.id.indexOf('st_')===0 && amt>0) pick=acctPick(st,i,'invest','這筆放進');
+      /* 額外收入（開牌收益、好事卡）：學員自己決定進哪一格，但只列他有設定比例的帳戶 */
+      if(st.id.indexOf('st_')===0 && amt>0) pick=acctPick(st,i,'invest','這筆放進',false,true);
+      if(st.id.indexOf('card_')===0 && amt>0 && allocSum(allocOf(i,curRound()))>0)
+        pick=acctPick(st,i,'save','這筆放進',false,true);
       if(m.tick[i]) cls.push('done');
     }
     else if(st.mode==='take'){
@@ -1708,6 +1911,7 @@ function tapStu(i){
   if(st.mode==='alloc'){ openDrawer('alloc',i); return; }
   if(st.id==='final'){ openDrawer('stu',i); return; }
   m.tick[i]=m.tick[i]?0:1;
+  play(m.tick[i]?'coin':'tick');
   saveCS(); render();
 }
 /* ★ 這裡就是階段 6 的核心：買不起就點不動。
@@ -1726,6 +1930,7 @@ function bumpUnit(i,d){
         toast(cap>0
           ? `你的投資帳戶只剩 ${fm(avail)}，最多 ${cap} 單位。`
           : `你的投資帳戶只有 ${fm(avail)}，買不起這一張。`);
+        play('nope');
         return;
       }
     }
@@ -1736,12 +1941,14 @@ function bumpUnit(i,d){
         toast(st.alsoCash
           ? `你的錢只夠捐 ${cap} 份（貢獻帳戶 ${fm(avail)}，其餘從你身上的錢出）。`
           : `你的${ANAME[st.acct]||''}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`);
+        play('nope');
         return;
       }
     }
   }
   m.cnt[i]=nx;
   if(st.mode==='units' && nx*st.price < (m.loan[i]||0)) m.loan[i]=0;
+  play(nx>now ? 'coin' : 'tick');
   saveCS(); render();
 }
 /* 借款上限＝每月淨現金流 ×10，與規則說明頁那一條一致。
@@ -1782,14 +1989,14 @@ function nextStep(){
   const st0=STEPS[CS.cur.i];
   if(st0 && st0.id==='alloc0'){
     for(let i=0;i<N();i++) if(!allocKnown(i,1)){ openDrawer('alloc',i); return; }
-    toast('都問完了，等講師開始第 1 月'); return;
+    toast('設定好了，等講師開始第 1 月'); return;
   }
-  if(CS.cur.i < STEPS.length-1){ CS.cur.i++; }
-  else if(!allDone()){ CS.finKey=phaseKey(); toast('這個月你做完了，等講師繼續'); }
+  if(CS.cur.i < STEPS.length-1){ CS.cur.i++; play('flip'); }
+  else if(!allDone()){ CS.finKey=phaseKey(); toast('這個月你做完了，等講師繼續'); play('good'); }
   saveCS(); render(); report();
 }
 function prevStep(){
-  if(CS.cur.i>0){ CS.cur.i--; saveCS(); render(); }
+  if(CS.cur.i>0){ CS.cur.i--; play('tick'); saveCS(); render(); }
 }
 
 /* =====================================================================
@@ -1831,7 +2038,13 @@ function allocPanel(i){
   const inc=(E&&E.incTot[i])||0;
   const rows=ACCS.map(k=>`
     <div class="alrow">
-      <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i>${ANAME[k]}</span>
+      <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i>${
+        k==='give'
+          ? `<input type="text" maxlength="6" value="${String(CS.giveName||'').replace(/"/g,'&quot;')}"
+               placeholder="自己命名" oninput="setGiveName(this.value)" onblur="render()"
+               style="width:82px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
+                      border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">`
+          : ANAME[k]}</span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
         onfocus="this.select()" oninput="setAllocK(${i},'${k}',this.value)" onblur="snapAlloc(${i},'${k}',this)">
@@ -1844,30 +2057,28 @@ function allocPanel(i){
       ${fixing
         ? `<b>修正模式：改的是第 1 月的比例</b><br>
            按完之後第 1 月到現在<b>每一個月都會用新比例重算一次</b>，
-           帳戶餘額、生活費、投資上限都會自己更新。桌上的籌碼請照新的數字重擺。
-           ${later?`<br>注意：他在第 ${later} 月自己調過一次比例，那次的調整會保留。`:''}
+           帳戶餘額、生活費、投資上限都會自己更新。你紙上的數字請照新的改過來。
+           ${later?`<br>注意：你在第 ${later} 月自己調過一次比例，那次的調整會保留。`:''}
            <button onclick="allocFix(${i},0)">不用了，改回「從第 ${nat} 月起生效」</button>`
-        : `一開始就記錯了嗎？<br>現在改的是<b>從第 ${nat} 月起生效</b>（學員自己想換比例）。
+        : `一開始就打錯了嗎？<br>現在改的是<b>從第 ${nat} 月起生效</b>（你自己想換比例）。
            如果是你一開始打錯、前面幾個月都算錯了——
            <button onclick="allocFix(${i},1)">是我一開始打錯，回第 1 月改並全部重算</button>`}
     </div>` : '';
-  const nx=(i+1<N())?i+1:-1;
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>我 的 分 配 比 例</h3>
     <div class="ahint">
-      把他自己說的數字直接打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
+      把你想分的百分比打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是你的選擇。<br>
       ${tr>1?`這次設定<b>從第 ${tr} 月開始生效</b>。`:'第 1 月起生效，之後每個月都照這個比例。'}</div>
     <div class="alloc">${rows}
       <div class="arest ${allocSum(al)>100?'over':''}" id="arest">${restLine(al,inc)}</div>
     </div>
     <div class="apre">
-      <button onclick="setPreset(${i},'ml')">他說不分帳戶</button>
+      <button onclick="setPreset(${i},'ml')">我不分帳戶</button>
       <button onclick="setPreset(${i},'std')">標準六帳戶</button>
     </div>
     ${fix}
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
-      onclick="${nx>=0?`openDrawer('alloc',${nx})`:'closeDrawer()'}">
-      ${nx>=0?'記好了，問下一位 →':'記好了，回主畫面'}</button>`;
+      onclick="closeDrawer()">設定好了，回主畫面</button>`;
 }
 /* 打字時只更新右邊的金額和最下面那行，不重畫輸入框——不然游標會跳掉 */
 function paintAlloc(i){
@@ -1906,6 +2117,7 @@ function snapAlloc(i,k,el){
 }
 function setPreset(i,p){
   setAllocAt(i,allocTarget(),Object.assign({},PRESET[p]));
+  play('tick');
   render(); openDrawer('alloc',i);
 }
 /* 一開始就打錯 → 回第 1 月改。改完 recompute() 會自動把每一個月重跑一次。 */
@@ -1950,7 +2162,7 @@ function loanSection(i){
     </div>
     ${u?'':`<div style="font-size:12px;color:var(--ink-mute);padding:2px">借夠了之後，關掉這個視窗，回上一頁點「投入」。</div>`}`;
 }
-function borrowMore(i){ bumpLoan(i); const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i); }
+function borrowMore(i){ bumpLoan(i); play('coin'); const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i); }
 function clearLoan(i){
   const st=STEPS[CS.cur.i]; if(!st || st.mode!=='units') return;
   markOf(st).loan[i]=0; saveCS(); render();
@@ -2055,12 +2267,14 @@ function doMove(i){
   if(amt>bal){ toast(`${ANAME[from]}只有 ${fm(bal)}，搬不了那麼多`); return; }
   const r=Math.max(1,curRound());
   CS.fixes.push({r,i,k:from,k2:to,amt});   /* 一筆＝一次搬移；重播時來源不夠就有多少搬多少 */
+  play('coin');
   saveCS(); render(); openDrawer('move',i);
   toast(`${ANAME[from]} → ${ANAME[to]} 搬了 ${fm(amt)}`);
 }
 function adjAcc(k,i,d){
   const r=Math.max(1,curRound());
   CS.fixes.push({r,i,k,amt:d});
+  play('tick');
   saveCS(); render(); openDrawer('stu',i);
 }
 function doRepay(i){
@@ -2068,6 +2282,7 @@ function doRepay(i){
   const amt=Math.min(loanUnit(), E.loan[i]);
   if(amt<=0) return;
   CS.repay.push({r,i,amt});
+  play('coin');
   saveCS(); render(); openDrawer('stu',i);
   toast(`還了 ${fm(amt)} 投資貸款`);
 }
@@ -2080,6 +2295,7 @@ function setPanel(){
       連線方式：${(TX&&TX.net&&TX.net())?'網路（跨裝置）'
         :(ST?'同一台電腦的另一個分頁':'尚未連上')}</div>
     ${link}
+    <button class="dbtn" onclick="toggleMute()">${CS.muted?'🔇 音效：目前關閉（點一下開啟）':'🔊 音效：目前開啟（點一下關掉）'}</button>
     <button class="dbtn" onclick="openDrawer('manual')">切換月份／手動模式</button>
     <button class="dbtn" onclick="closeDrawer();setTimeout(()=>{$('#setup').style.display='block';fillSetup();},80)">改房號或名字</button>
     <div class="dsec">我 的 總 覽</div>
@@ -2100,7 +2316,7 @@ function overviewHTML(){
 function manualPanel(){
   let mon='';
   for(let i=1;i<=12;i++) mon+=`<button class="${CS.mRound===i?'on':''}" onclick="setManualRound(${i})">${i}</button>`;
-  const acts=[['salary','發薪水'],['alloc','分配到帳戶'],['expense','收生活費'],['invest','投資機會'],['check','逐人確認']];
+  const acts=[['salary','領薪水'],['alloc','分配到帳戶'],['expense','付生活費'],['invest','投資機會'],['check','確認事件']];
   let ab='';
   acts.forEach(([k,t])=>ab+=`<button class="dbtn ${CS.mAct===k?'':''}" style="${CS.mAct===k?'border-color:var(--green);color:var(--green-900)':''}" onclick="setManualAct('${k}')">${t}</button>`);
   return `<button class="dx" onclick="closeDrawer()">✕</button>
@@ -2126,7 +2342,7 @@ function setManualAct(k){
 }
 function backAuto(){ CS.manual=false; CS.mAct=''; saveCS(); closeDrawer(); render(); }
 function wipe(){
-  if(!confirm('確定要清空這一桌的所有紀錄？投資、貸款、捐款都會不見。')) return;
+  if(!confirm('確定要清空你的帳本？投資、貸款、捐款都會不見。')) return;
   if(!confirm('再確認一次：清空之後沒辦法復原。')) return;
   const keep={room:CS.room,table:CS.table,n:CS.n,names:CS.names};
   CS=Object.assign(newLedger(),keep); saveCS(); closeDrawer(); render(); toast('已清空');
@@ -2151,6 +2367,7 @@ function startConsole(){
   saveCS();
   $('#setup').style.display='none';
   document.body.classList.add('ready');
+  ac(); play('good');        /* 手機要有一次使用者手勢才能出聲，就是這一下 */
   connect(); render();
   /* 進來第一件事就是設自己的預算比例 */
   if(!allocKnown(0,1)) setTimeout(()=>openDrawer('alloc',0), 80);
