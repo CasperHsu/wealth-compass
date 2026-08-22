@@ -161,6 +161,13 @@ body.ready.disconnected #app{padding-top:118px}
 .tick{position:absolute;top:9px;right:10px;font-size:22px;color:var(--green);font-weight:800;display:none}
 .stu.done .tick{display:block}
 .stu.forced .tick{display:block;color:var(--brick)}
+/* 買不起這一張投資時，格子下面那一行「可以跟銀行借」的提示。
+   刻意做成一行小字而不是按鈕——借款仍然是要學員自己開口的事，
+   只是在手機上總得看得到入口在哪。 */
+.lend{margin-top:9px;padding:8px 10px;border-radius:9px;position:relative;z-index:2;
+  background:var(--gold-50,#FBF4E4);border:1.5px dashed var(--gold);
+  color:var(--gold-deep);font-size:13px;font-weight:700;line-height:1.5;cursor:pointer}
+.lend:active{transform:scale(.985);filter:brightness(.97)}
 .mini{display:flex;gap:6px;z-index:2;margin-top:9px;justify-content:flex-end;flex-wrap:wrap}
 .mini button{height:34px;min-width:38px;padding:0 10px;border-radius:9px;border:1.5px solid var(--line-2);
   background:#fff;font-size:14px;font-weight:700;color:var(--ink-soft)}
@@ -830,6 +837,7 @@ function setAccName(i,k,v){
     const al=Object.assign(zAcc(), allocOf(i,tr));
     if(al[k]>0){ al[k]=0; setAllocAt(i,tr,al); }
   }
+  paintNames(i);
 }
 function setAllocAt(i,r,obj){
   if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
@@ -900,6 +908,29 @@ function fillGaps(){
     };
     n++;
   }
+  return n;
+}
+/* 講師把某一則月底事件或開牌「翻出來」的那一瞬間如果剛好斷線，那個月的帳本就會
+   缺一角——少算一件事件、或少了一次開牌結算，畫面上完全看不出來，數字卻是錯的。
+   主控廣播的 sealed 是「已經走完的月份」的完整清單（只有代號，不會劇透未來），
+   照它把過去的月份補齊。重播引擎算錢只看 id 與 when，所以補回代號就夠。 */
+function sealPast(){
+  if(ST && ST.back) CS.back=ST.back;
+  const b=CS.back, now=(ST&&ST.round)||0;
+  if(!b || !b.sealed || now<2) return 0;
+  let n=0;
+  for(const k in b.sealed){
+    const r=+k; if(r>=now) continue;
+    const f=CS.mlog[r]; if(!f || f.auto) continue;     /* 整個月沒連上的另外補（fillGaps） */
+    const sl=b.sealed[r];
+    if(sl.fixed && sl.fixed.length > (f.fixed||[]).length){
+      const had={}; (f.fixed||[]).forEach(x=>{ had[x.id]=x; });
+      f.fixed = sl.fixed.map(x=> had[x.id] || x);      /* 收到過的保留原文，缺的用代號補 */
+      n++;
+    }
+    if(sl.settle && sl.settle.length > (f.settle||[]).length){ f.settle=sl.settle; n++; }
+  }
+  if(n) saveCS();
   return n;
 }
 function maxRound(){
@@ -1748,6 +1779,7 @@ function maxUnitsFor(i,st,D){
 function applyState(){
   absorbState();
   const gaps=fillGaps();
+  sealPast();
   if(gaps>0) toast(`有 ${gaps} 個月沒連上線，已自動補算（只領薪水、付固定支出）`);
   const key=phaseKey();
   if(CS.cur.k!==key){ CS.cur={ k:key, i:0 }; }   /* 講師推進到下一階段 → 副控自動跳到第一步 */
@@ -1833,7 +1865,7 @@ function renderGrid(st){
   let h='';
   for(let i=0;i<N();i++){
     const cls=[];
-    let big='', sub='', mini='', pick='';
+    let big='', sub='', mini='', pick='', mini2='';
     const D = detOf(st,i);
     if(st.mode==='give'){
       const amt = st.amountOf? st.amountOf(i) : (D?D.amt:(st.money||0));
@@ -1893,6 +1925,7 @@ function renderGrid(st){
     }
     else if(st.mode==='units'){
       const u=m.cnt[i], lo=m.loan[i];
+      /* mini2＝格子下面那一行提示（目前只有借款用到） */
       const avail = D? D.avail : 0;
       const cap = maxUnitsFor(i,st,D);
       if(u) cls.push('picked');
@@ -1901,6 +1934,10 @@ function renderGrid(st){
       if(u) sub = `應收 ${fm(Math.max(0,need-lo))}`+(lo?`　（借款 ${fm(lo)}）`:'');
       else sub = cap>0 ? (st.one?`投資帳戶 ${fm(avail)}　點一下＝投 ${fm(st.price)}`:`投資帳戶 ${fm(avail)}　最多 ${cap} 單位`)
                        : `投資帳戶 ${fm(avail)}，買不起`;
+      /* 借款仍然不做成主畫面上的按鈕（「可以跟銀行借」是要學員自己想到的事），
+         但買不起的時候給一行提示——不然在手機上根本找不到那個入口。 */
+      if(!u && cap<=0 && slotOf(i,r,'invest'))
+        mini2=`<div class="lend" onclick="event.stopPropagation();openDrawer('stu',${i})">💰 錢不夠？點「明細」可以跟銀行借</div>`;
       const spare=Math.max(0, lo-u*st.price);
       if(spare>0){ sub += `　多借 ${fm(spare)}`; pick=acctPick(st,i,'invest','多借的放進',true); }
       /* 借款刻意不放在這一層：「可以跟銀行借」是要學員自己想到的事，
@@ -1938,6 +1975,7 @@ function renderGrid(st){
       <div class="amt">${big}</div>
       <div class="sub">${sub||''}</div>
       ${pick}
+      ${mini2}
       <div class="led">${ledgerLine(i,r)}</div>
       ${mini}
     </div>`;
@@ -2229,7 +2267,7 @@ function allocPanel(i){
           oninput="setAccName(${i},'${k}',this.value)" onblur="render()"
           style="width:76px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
                  border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">
-        <small style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
+        <small id="atag-${k}" style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
           (ns[si]||'').trim() ? (roleTag(k)?'算 '+roleTag(k):'一般帳戶') : ''}</small></span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
@@ -2266,6 +2304,21 @@ function allocPanel(i){
     ${fix}
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
       onclick="closeDrawer()">設定好了，回主畫面</button>`;
+}
+/* 打名字的當下就把那一格的 % 解鎖、角色標籤也跟著變。
+   分配面板只有在打開抽屜時整塊產生一次（render() 不會重畫抽屜內容），
+   少了這一段就得關掉抽屜再打開，% 才會變成可以填——實測就是「打完名字填不了比例」。 */
+function paintNames(i){
+  const tr=allocTarget(), ns=namesAt(i,tr), rm=roleMap(i,tr);
+  ACCS.forEach((k,si)=>{
+    const named=!!(ns[si]||'').trim();
+    const el=$('#ain-'+k);
+    if(el){ el.disabled=!named; if(!named) el.value=''; el.title=named?'':'先取名字'; }
+    const tag=$('#atag-'+k);
+    if(tag){ let role=''; for(const rr in rm){ if(rm[rr]===k) role=ROLE_NAME[rr]; }
+             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : ''; }
+  });
+  paintAlloc(i);
 }
 /* 打字時只更新右邊的金額和最下面那行，不重畫輸入框——不然游標會跳掉 */
 function paintAlloc(i){
@@ -2371,8 +2424,8 @@ function stuPanel(i){
     const state = h.st ? (h.st.dead?'已開牌・歸零':(stillHeld(h)?'已開牌・繼續持有':'已開牌・本金已退')) : '等開牌';
     holds+=`<div class="drow"><div class="k">${h.title}<br>
       <span style="font-size:12px;color:var(--ink-soft)">${u} 單位 × ${fm(h.price)}　${state}</span></div>
-      <div class="adj"><button onclick="adjHold('${k}',${i},-1)">−</button>
-      <button onclick="adjHold('${k}',${i},1)">＋</button></div></div>`;
+      ${CS.fixMode?`<div class="adj"><button onclick="adjHold('${k}',${i},-1)">−</button>
+      <button onclick="adjHold('${k}',${i},1)">＋</button></div>`:''}</div>`;
   }
   if(!holds) holds='<div class="drow"><div class="k" style="color:var(--ink-soft)">還沒有任何投資</div></div>';
   const al=allocOf(i,r);
@@ -2381,13 +2434,13 @@ function stuPanel(i){
     accs+=`<div class="drow"><div class="k"><i class="adot" style="background:${ACOLOR[k]}"></i>${aName(k,i,r)}
       ${al[k]>0?`<span style="color:var(--ink-soft);font-size:12px">（分配 ${al[k]}%）</span>`:''}</div>
       <div class="v">${fm(E.A[i][k])}</div>
-      <div class="adj"><button onclick="adjAcc('${k}',${i},-1000)">−</button>
-      <button onclick="adjAcc('${k}',${i},1000)">＋</button></div></div>`;
+      ${CS.fixMode?`<div class="adj"><button onclick="adjAcc('${k}',${i},-1000)">−</button>
+      <button onclick="adjAcc('${k}',${i},1000)">＋</button></div>`:''}</div>`;
   });
   accs+=`<div class="drow"><div class="k"><i class="adot" style="background:#9A9484"></i>現金（沒分配到的）</div>
     <div class="v">${fm(E.pocket[i]+E.incoming[i])}</div>
-    <div class="adj"><button onclick="adjAcc('pocket',${i},-1000)">−</button>
-    <button onclick="adjAcc('pocket',${i},1000)">＋</button></div></div>`;
+    ${CS.fixMode?`<div class="adj"><button onclick="adjAcc('pocket',${i},-1000)">−</button>
+    <button onclick="adjAcc('pocket',${i},1000)">＋</button></div>`:''}</div>`;
   const hist=(E.log[i]||[]).slice().reverse().map(l=>
     `<div class="hrow ${l.c}"><span class="hm">${l.r}月</span>${l.t}</div>`).join('')
     || '<div class="hrow" style="color:var(--ink-soft)">還沒有任何紀錄</div>';
@@ -2395,23 +2448,25 @@ function stuPanel(i){
     <h3>${nameOf(i)}</h3>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">
       淨資產 <b style="color:var(--green-900)">${fm(netOf(i))}</b>　每月淨現金流 <b>${fm(flowOf(i))}</b><br>
-      數字跟你自己記的對不上時，用 +／− 改成你的，後面每個月會自動重算。</div>
+      ${CS.fixMode
+        ? '<span style="color:var(--brick)">人工更正開啟中</span>：用 ＋／− 改成你紙上的數字，後面每個月會自動重算。'
+        : '這些數字都是照遊戲規則自己算出來的，不用也不能自己加減。'}</div>
+    ${loanSection(i)}
     <div class="dsec">六 個 帳 戶
       <button style="float:right;font-size:13px;color:var(--green);font-weight:700;
         padding:8px 10px;margin:-8px -10px 0 0;min-height:40px"
         onclick="openDrawer('alloc',${i})">改分配比例</button></div>${accs}
-    ${loanSection(i)}
     <div class="dsec">持 有 的 投 資</div>${holds}
     <div class="dsec">收 入 與 負 債</div>
     <div class="drow"><div class="k">每月投資配息（被動）</div><div class="v">${fm(passiveOf(i,r+1))}</div></div>
     <div class="drow"><div class="k">每月其他收入（知識變現＋投資現金流）</div><div class="v">${fm(otherOf(i,r+1))}</div>
-      <div class="adj"><button onclick="adjAcc('other',${i},-1000)">−</button>
-      <button onclick="adjAcc('other',${i},1000)">＋</button></div></div>
+      ${CS.fixMode?`<div class="adj"><button onclick="adjAcc('other',${i},-1000)">−</button>
+      <button onclick="adjAcc('other',${i},1000)">＋</button></div>`:''}</div>
     <div class="drow"><div class="k">投資貸款（你自己借的）</div><div class="v" style="color:var(--gold-deep)">${fm(E.loan[i])}</div>
       ${E.loan[i]?`<div class="adj"><button style="width:auto;padding:0 10px;font-size:14px" onclick="doRepay(${i})">還款</button></div>`:''}</div>
     <div class="drow"><div class="k">被迫負債（繳不出錢欠的）</div><div class="v" style="color:var(--brick)">${fm(E.debt[i])}</div>
-      <div class="adj"><button onclick="adjAcc('debt',${i},-10000)">−</button>
-      <button onclick="adjAcc('debt',${i},10000)">＋</button></div></div>
+      ${CS.fixMode?`<div class="adj"><button onclick="adjAcc('debt',${i},-10000)">−</button>
+      <button onclick="adjAcc('debt',${i},10000)">＋</button></div>`:''}</div>
     <div class="drow"><div class="k">公益累計捐款</div><div class="v">${fm(E.donated[i])}</div></div>
     <div class="dsec">每 月 應 付 利 息</div>
     <div class="drow"><div class="k">欠款 ${fm(debtOf(i))} × 月息 ${Math.round(loanRate()*100)}%</div>
@@ -2498,7 +2553,20 @@ function setPanel(){
     <div class="dsec">我 的 總 覽</div>
     <div style="margin-top:8px">${overviewHTML()}</div>
     <div class="dsec">危 險 操 作</div>
+    <button class="dbtn" onclick="toggleFix()">${CS.fixMode
+      ? '✏️ 人工更正：目前開啟（點一下關掉）'
+      : '✏️ 人工更正：目前關閉（點一下開啟）'}</button>
+    <div style="font-size:12px;color:var(--ink-mute);line-height:1.6;margin:-6px 2px 12px">
+      平常請關著。帳上的數字都是遊戲照規則自己算出來的，自己加減會讓這一局失真；
+      只有在你紙上的數字跟畫面真的對不起來、又找不到原因時，才打開它手動修。</div>
     <button class="dbtn red" onclick="wipe()">清空我的帳本（重新開始）</button>`;
+}
+/* 人工更正預設關閉：學員台的數字一律照遊戲走，不能自己加減
+   （＋／− 本來是從副控台抄過來的，那是給志工對帳用的）。 */
+function toggleFix(){
+  CS.fixMode=!CS.fixMode; saveCS(); play('tick');
+  const p=$('#dPanel'); if(p) p.innerHTML=setPanel();
+  toast(CS.fixMode?'人工更正已開啟，明細裡會出現 ＋／−':'人工更正已關閉');
 }
 function overviewHTML(){
   const r=curRound(); let h='';

@@ -644,6 +644,7 @@ function setAccName(i,k,v){
     const al=Object.assign(zAcc(), allocOf(i,tr));
     if(al[k]>0){ al[k]=0; setAllocAt(i,tr,al); }
   }
+  paintNames(i);
 }
 function setAllocAt(i,r,obj){
   if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
@@ -679,6 +680,29 @@ function absorbManual(){
   if(!o) CS.mlog[r]={ income:50000, expense:30000, jobless:false, card:null,
                       settle:[], fixed:[], nums:null, rate:.1, unit:10000, capX:10,
                       per:2000, cover:10000, ph:4 };
+}
+/* 講師把某一則月底事件或開牌「翻出來」的那一瞬間如果剛好斷線，那個月的帳本就會
+   缺一角——少算一件事件、或少了一次開牌結算，畫面上完全看不出來，數字卻是錯的。
+   主控廣播的 sealed 是「已經走完的月份」的完整清單（只有代號，不會劇透未來），
+   照它把過去的月份補齊。重播引擎算錢只看 id 與 when，所以補回代號就夠。 */
+function sealPast(){
+  if(ST && ST.back) CS.back=ST.back;
+  const b=CS.back, now=(ST&&ST.round)||0;
+  if(!b || !b.sealed || now<2) return 0;
+  let n=0;
+  for(const k in b.sealed){
+    const r=+k; if(r>=now) continue;
+    const f=CS.mlog[r]; if(!f || f.auto) continue;     /* 整個月沒連上的另外補（fillGaps） */
+    const sl=b.sealed[r];
+    if(sl.fixed && sl.fixed.length > (f.fixed||[]).length){
+      const had={}; (f.fixed||[]).forEach(x=>{ had[x.id]=x; });
+      f.fixed = sl.fixed.map(x=> had[x.id] || x);      /* 收到過的保留原文，缺的用代號補 */
+      n++;
+    }
+    if(sl.settle && sl.settle.length > (f.settle||[]).length){ f.settle=sl.settle; n++; }
+  }
+  if(n) saveCS();
+  return n;
 }
 function maxRound(){
   let m=0; for(const k in CS.mlog){ const r=+k; if(r>m) m=r; } return m;
@@ -1515,6 +1539,7 @@ function maxUnitsFor(i,st,D){
 }
 function applyState(){
   absorbState();
+  sealPast();
   const key=phaseKey();
   if(CS.cur.k!==key){ CS.cur={ k:key, i:0 }; }   /* 講師推進到下一階段 → 副控自動跳到第一步 */
   render(); saveCS(); report();
@@ -1901,7 +1926,7 @@ function allocPanel(i){
           oninput="setAccName(${i},'${k}',this.value)" onblur="render()"
           style="width:76px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
                  border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">
-        <small style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
+        <small id="atag-${k}" style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
           (namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()
             ? ((function(){ const rm=roleMap(i,tr); for(const rr in rm){ if(rm[rr]===k) return '算 '+ROLE_NAME[rr]; } return '一般帳戶'; })())
             : ''}</small></span>
@@ -1942,6 +1967,21 @@ function allocPanel(i){
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
       onclick="${nx>=0?`openDrawer('alloc',${nx})`:'closeDrawer()'}">
       ${nx>=0?'記好了，問下一位 →':'記好了，回主畫面'}</button>`;
+}
+/* 打名字的當下就把那一格的 % 解鎖、角色標籤也跟著變。
+   分配面板只有在打開抽屜時整塊產生一次（render() 不會重畫抽屜內容），
+   少了這一段就得關掉抽屜再打開，% 才會變成可以填。 */
+function paintNames(i){
+  const tr=allocTarget(), ns=namesAt(i,tr), rm=roleMap(i,tr);
+  ACCS.forEach((k,si)=>{
+    const named=!!(ns[si]||'').trim();
+    const el=$('#ain-'+k);
+    if(el){ el.disabled=!named; if(!named) el.value=''; el.title=named?'':'先取名字'; }
+    const tag=$('#atag-'+k);
+    if(tag){ let role=''; for(const rr in rm){ if(rm[rr]===k) role=ROLE_NAME[rr]; }
+             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : ''; }
+  });
+  paintAlloc(i);
 }
 /* 打字時只更新右邊的金額和最下面那行，不重畫輸入框——不然游標會跳掉 */
 function paintAlloc(i){

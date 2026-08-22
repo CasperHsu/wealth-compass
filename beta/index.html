@@ -960,7 +960,7 @@ function newState(){
   const cfg = {...DEF};
   return {v:10, cfg, round:0, phase:'salary', started:false,
     deck:buildDeck(cfg), recap:{}, pend:[], demo:newDemo(), muted:false, coop:false,
-    expenseBonus:0, budgetUnlocked:false, mindlessOn:false, preFix:{},
+    expenseBonus:0, budgetUnlocked:false, mindlessOn:false, preFix:{}, shown:{},
     timer:{accumMs:0, runningSince:null}};
 }
 
@@ -995,6 +995,7 @@ function load(){
       if(s.demo.donated===undefined) s.demo.donated=0;
       if(s.mindlessOn===undefined) s.mindlessOn=false;
       if(!s.preFix) s.preFix={};
+      if(!s.shown) s.shown={};
       /* 修復可能損壞的牌組（缺牌以平安月補上） */
       if(Array.isArray(s.deck)) s.deck=s.deck.map(id=>CAT[id]?id:'calm1');
       return s;
@@ -1145,15 +1146,16 @@ function syncFace(id){
            unit:c.unit||0, cf:c.cf||0, amt:c.amt||0, one:!!c.one };
 }
 /* 本月要開牌的投資：到了該開牌的月份，才把倍數換算成「每單位該發多少」送出去 */
-function syncSettle(){
-  if(!S.started || S.round<1 || S.round>S.cfg.rounds) return [];
-  return S.pend.filter(p=>p.due===S.round && !p.nosettle).map(p=>{
+function syncSettle(rr){
+  const R=(rr===undefined?S.round:rr);
+  if(!S.started || R<1 || R>S.cfg.rounds) return [];
+  return S.pend.filter(p=>p.due===R && !p.nosettle).map(p=>{
     const c=CAT[p.id]; if(!c) return null;
     const gm=gmOf(p), wipe=settleWipes(c,gm);
     return { id:p.id, title:c.title, unit:c.unit, dead:wipe, one:!!c.one,
              gmPct: Math.round(gm*100),
              perUnit: wipe ? 0 : Math.round(c.unit*gm + (c.back?c.unit:0)),
-             owePerUnit: (c.dead && gm<0) ? Math.round(c.unit*-gm) : 0,
+             owePerUnit: (wipe && gm<0) ? Math.round(c.unit*-gm) : 0,
              backPrincipal:!!c.back,
              addCf: wipe?0:(c.addCf||0), extraCf: wipe?0:(c.extraCf||0),
              stopCf: wipe ? (c.cf||0) : 0,          /* 標的沒了，之前的配息要停掉 */
@@ -1190,6 +1192,20 @@ function syncFixed(rr){
    學員台若有幾個月沒連上，帳本會缺那幾個月、重播時整月被跳過（薪水沒領、生活費沒付、
    事件沒發生），數字會靜靜地錯掉。有了這張表就能自己把那幾個月補算完——薪水、生活費、
    停薪、通膨、結婚生子、重大事故、抽銀根都算得回來；補不回來的只有當月隨機抽到的那張牌。 */
+/* 已經走完的月份（第 1 月 ～ 目前月份的前一個月）：把那幾個月完整的固定事件與
+   開牌結果一起送。學員如果剛好在某一則「翻出來」的瞬間斷線，回來時那個月的帳本
+   會缺一角、數字靜靜地錯掉；有了這份就能自己補齊。只送已經過去的月份，不會劇透。
+   固定事件只送代號與時點——引擎算錢只看這兩個，說明文字省下來不佔頻寬。 */
+function syncSealed(){
+  const out={};
+  if(!S.started) return out;
+  for(let r=1; r<S.round && r<=S.cfg.rounds; r++){
+    const fx=syncFixed(r).map(x=>({id:x.id, when:x.when||'', title:x.title}));
+    const st=syncSettle(r);
+    if(fx.length || st.length) out[r]={fixed:fx, settle:st};
+  }
+  return out;
+}
 function syncSched(){
   const out={};
   if(!S.started) return out;
@@ -1231,15 +1247,17 @@ function buildSyncState(){
            joblessSaveUnit:c.joblessSaveUnit, joblessSaveCover:c.joblessSaveCover, charityUnit:c.charityUnit,
            charityCover:c.charityCover, accidentCost:c.accidentCost,
            unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn },
-    todo:syncTodo(), fixed:syncFixed(),
+    todo:syncTodo(),
+    /* 只送講師已經翻出來的：沒翻的月底事件與開牌結果一律不廣播（見 reveal） */
+    fixed:syncFixed().filter(f=>isShown('fx_'+f.id)),
     /* 斷線補算包：學員台缺哪幾個月就照這份自己補回來（見 syncSched） */
     back:{ baseExpense:c.expense,
            inflationMonth:c.inflationMonth, inflationExtra:c.inflationExtra,
            marryMonth:c.marryMonth, marryExtra:c.marryExtra,
            joblessMonth:c.joblessMonth, joblessLen:c.joblessLen,
-           sched:syncSched() },
+           sched:syncSched(), sealed:syncSealed() },
     card:(S.phase==='drawn'||S.phase==='expense') ? syncFace(S.recap[S.round]) : null,
-    settle:syncSettle() };
+    settle:syncSettle().filter(x=>isShown('st_'+x.id)) };
 }
 /* 節流（不是防抖）：第一則立刻送，之後最多每 120ms 一則，並保證最後一則一定會送出。
    用防抖的話，連續快速操作會讓推播一直被往後延，副控畫面可能整段停住。 */
@@ -1452,6 +1470,19 @@ function fitPanel(){
   p.style.transform = s>1.005 ? `scale(${s.toFixed(3)})` : 'none';
 }
 function queueOverlay(fn){ OQ.push(fn); if(!overlayOpen) nextOverlay(); }
+/* 「投影幕上真的翻出來了」名單。
+   沒有這一份的話，主控一進新月份就把整包月底事件與開牌結果廣播出去，
+   學員在自己手機上按「完成」就先看到失業、重大事故、開牌 −100%，
+   連帳戶餘額都會提早掉下去——等於劇透。改成每一則真的顯示在投影幕上時
+   才記一筆並廣播，副控台與學員台就只會拿到講師已經翻開的東西。
+   key＝「第幾月|代號」；跟著 S 一起存檔，按「上一步」會連這份一起倒帶。 */
+function reveal(id){
+  if(!S.shown) S.shown={};
+  const k=S.round+'|'+id;
+  if(S.shown[k]) return;
+  S.shown[k]=1; save();            /* save() 會順便 syncPush，兩端當下就跟上 */
+}
+function isShown(id){ return !!(S.shown && S.shown[S.round+'|'+id]); }
 function nextOverlay(){
   if(OQ.length){ OQ.shift()(); }
   else { overlayOpen=false; if(onAllClosed){ const f=onAllClosed; onAllClosed=null; f(); } }
@@ -1740,8 +1771,9 @@ function demoSettle(pend){
   const gm=gmOf(pend);
   if(settleWipes(card,gm)){
     removeHold(pend.id,amt);
-    /* 股災②抽到負數：本金歸零之外還要追繳。創業失敗只是歸零，不追繳，配息也不給 */
-    const owe = (card.dead && gm<0) ? Math.round(amt*-gm) : 0;
+    /* 開牌開出負數＝本金歸零之外還要照倍數追繳：
+       股災②可能 −50%／−100%／−200%；創業 −100% 就是本金拿不回來，再賠一次本金。 */
+    const owe = gm<0 ? Math.round(amt*-gm) : 0;
     dLog(`投資結算「${card.title}」開牌 ${pctTxt(gm)}：本金 ${fm(amt)} 歸零${owe?`，另追繳 ${fm(owe)}`:''}`,'warn');
     if(owe) payFromInvest(owe, `${card.title}・追繳虧損`);
     if(card.cf>0) x.passive=Math.max(0, x.passive-card.cf*units);   /* 標的沒了，配息跟著停 */
@@ -1831,12 +1863,12 @@ function preExpenseFixed(r){
   if(r===cfg.inflationMonth && !S.preFix.inf){
     S.preFix.inf=1; S.expenseBonus+=cfg.inflationExtra;
     if(d().on) dLog(`通貨膨脹：固定支出從這個月起每月 +${fm(cfg.inflationExtra)}（現在 ${fm(curExpense())}/月）`,'warn');
-    queueOverlay(()=>{ play('expense'); openOverlay(inflationHTML(), true); });
+    queueOverlay(()=>{ reveal('fx_inflation'); play('expense'); openOverlay(inflationHTML(), true); });
   }
   if(r===cfg.marryMonth && !S.preFix.marry){
     S.preFix.marry=1; S.expenseBonus+=cfg.marryExtra;
     if(d().on) dLog(`結婚生子：固定支出從這個月起每月 +${fm(cfg.marryExtra)}（現在 ${fm(curExpense())}/月）`,'warn');
-    queueOverlay(()=>{ play('good'); openOverlay(marryHTML(), true); });
+    queueOverlay(()=>{ reveal('fx_marry'); play('good'); openOverlay(marryHTML(), true); });
   }
 }
 function nextRound(){
@@ -1851,30 +1883,30 @@ function nextRound(){
   if(d().incoming>0) demoAllocate();
   if(S.phase!=='expense'){ preExpenseFixed(r); demoExpense(); }
   /* ── v4 月底固定事件（依月份） ── */
-  if(r===cfg.mindlessMonth){ S.mindlessOn=true; queueOverlay(()=>{ play('expense'); openOverlay(mindlessHTML(), true); }); }
-  if(r===cfg.stressMonth){ demoStress(); queueOverlay(()=>{ play('alarm'); openOverlay(stressHTML(), true); }); }
+  if(r===cfg.mindlessMonth){ S.mindlessOn=true; queueOverlay(()=>{ reveal('fx_mindless'); play('expense'); openOverlay(mindlessHTML(), true); }); }
+  if(r===cfg.stressMonth){ demoStress(); queueOverlay(()=>{ reveal('fx_stress'); play('alarm'); openOverlay(stressHTML(), true); }); }
   /* 通膨（第 4 月）與結婚生子（第 8 月）已改到「付固定支出之前」，見 preExpenseFixed；
      知識變現（第 7 月）已改到「月初」，見下方 onAllClosed。這裡只留真正屬於月底的事。 */
   /* 失業卡在「停薪的前一個月月底、繳完生活費之後」翻出來——先過完安穩的一個月，才被通知沒工作 */
-  if(r===cfg.joblessMonth-1) queueOverlay(()=>{ play('boom'); openOverlay(joblessHTML(), true); });
-  if(r===cfg.charityMonth){ queueOverlay(()=>{ play('good'); openOverlay(charityHTML()); }); }
-  if(r===cfg.accidentMonth){ demoAccident(); queueOverlay(()=>{ play('boom'); openOverlay(accidentHTML(), true); }); }
+  if(r===cfg.joblessMonth-1) queueOverlay(()=>{ reveal('fx_jobless'); play('boom'); openOverlay(joblessHTML(), true); });
+  if(r===cfg.charityMonth){ queueOverlay(()=>{ reveal('fx_charity'); play('good'); openOverlay(charityHTML()); }); }
+  if(r===cfg.accidentMonth){ demoAccident(); queueOverlay(()=>{ reveal('fx_accident'); play('boom'); openOverlay(accidentHTML(), true); }); }
   demoMonthEnd(); demoSnap();
-  if((r===cfg.reallocA||r===cfg.reallocB) && r<cfg.rounds){ queueOverlay(()=>openOverlay(reallocHTML(r))); }
+  if((r===cfg.reallocA||r===cfg.reallocB) && r<cfg.rounds){ queueOverlay(()=>{ reveal('fx_realloc'); openOverlay(reallocHTML(r)); }); }
   onAllClosed = ()=>{
     if(r>=cfg.rounds){ S.round=cfg.rounds+1; save(); showFinal(); return; }
     S.round=r+1; S.phase='salary';
     /* 知識變現排在發薪之前，讓它跟當月薪水同一批處理。它算主動收入，
        停薪月（第 6、7 月）跟薪水一起停——「你把錢投在自己身上換到的收入，也要等你回到職場才拿得到」。 */
     if(S.round===cfg.knowMonth){ demoKnowledge();
-      queueOverlay(()=>{ play('fanfare'); openOverlay(knowledgeHTML(S.round), true); }); }
+      queueOverlay(()=>{ reveal('fx_know'); play('fanfare'); openOverlay(knowledgeHTML(S.round), true); }); }
     /* 第 12 月月初：銀行抽銀根。排在發薪之前——先把帳還了，再看這個月剩下什麼 */
     if(S.round===cfg.payoffMonth){ demoPayoff();
-      queueOverlay(()=>{ play('boom'); openOverlay(payoffHTML(), true); }); }
+      queueOverlay(()=>{ reveal('fx_payoff'); play('boom'); openOverlay(payoffHTML(), true); }); }
     demoSalary();
     S.pend.filter(p=>p.due===S.round && !p.nosettle).forEach(p=>{
       demoSettle(p);
-      queueOverlay(()=>openSettle(p));
+      queueOverlay(()=>{ reveal('st_'+p.id); openSettle(p); });
     });
     play('salary'); toast(`第 ${S.round} 月・發薪日`);
     save(); renderAll();
@@ -2261,14 +2293,14 @@ function settleHTML(p){
   const c=CAT[p.id];
   const invested = p.demoAmt>0;
   const gm=gmOf(p), wipe=settleWipes(c,gm);
-  const owePer = (c.dead && gm<0) ? Math.round(c.unit*-gm) : 0;
+  const owePer = (wipe && gm<0) ? Math.round(c.unit*-gm) : 0;
   const one=!!c.one, per=one?'':'/單位';
   let revealBig, revealSub;
   if(wipe){
     revealBig = pctTxt(gm);
     revealSub = owePer
       ? `<b>本金歸零，每單位還要再賠 ${fm(owePer)}</b>——先從投資帳戶掏，不夠就依序動用其他帳戶，再不夠只能跟銀行借`
-      : (c.dead?'<b>本金歸零，但至少不用再賠</b>':'<b>創業失敗——本金歸零，也沒有現金流</b>');
+      : '<b>本金歸零，但至少不用再賠</b>';
   }else{
     revealBig=pctTxt(gm);
     revealSub=`${one?'收益':'每單位收益'} <b>${fm(Math.round(c.unit*gm))}</b>${c.back?'＋<b>本金領回</b>':'・本金續留資產'}`+
