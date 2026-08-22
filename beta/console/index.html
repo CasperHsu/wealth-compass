@@ -337,35 +337,92 @@ function toast(msg){
    repay  ：主動償還投資貸款，一筆 {r,i,amt}
 ===================================================================== */
 /* 規則改版就換鍵：舊帳本的月份表與卡片金額都不一樣，重播會算出錯的數字 */
-const CKEY='zfl-console-v8';
+const CKEY='zfl-console-v9';
 const MAXSTU=6;
 let CS=null, E=null;                       /* CS＝存下來的帳本；E＝重算出來的當下狀態 */
 
 const ACCS  = ['life','fun','save','invest','learn','give'];
-const ANAME = {life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',give:'第六格',pocket:'現金'};
-/* 第六格由每一位學員自己命名，所以名字要跟著人走（學員台只有一個人，那邊用 getter 就夠）。
-   名字要有「留一份給別人」的意思，才認列成貢獻帳戶（公益倍數＋重大事故的貴人相助）；
-   取別的名字就只是一個普通帳戶，捐款也不會從那一格扣。 */
-const GIVE_RE=/公益|捐款|捐贈|捐獻|貢獻|奉獻|慈善|佈施|布施|愛心/;
-function gname(i){ return (CS&&CS.giveNames&&CS.giveNames[i])||'第六格'; }
-function aName(k,i){ return k==='give' ? gname(i) : ANAME[k]; }
-function isGiveAcc(i){ return GIVE_RE.test((CS&&CS.giveNames&&CS.giveNames[i])||''); }
-function setGiveName(i,v){
-  if(!CS) return;
-  if(!CS.giveNames) CS.giveNames=['','','','','',''];
-  CS.giveNames[i]=(v||'').trim().slice(0,6); saveCS();
+/* ── 六個帳戶由學員自己命名，名字決定那一格有什麼力量 ──────────────
+   ACCS 的 life/fun/save/invest/learn/give 從此只是「第 1～6 格」的儲存代號，
+   不再代表用途。用途（角色）靠名字的語意判定：
+     ・由上往下比對，先中先算，一格只認一個角色
+     ・同一個角色被兩格搶到時，先填的那格拿到力量，後面那格降級成普通帳戶
+     ・認不出來＝普通帳戶：錢存得進去、扣款鏈也會動到，但沒有任何特殊力量
+   判定順序不是隨便排的——泛用詞排後面，才不會把複合詞搶走：
+     「自我投資」要算學習、「旅遊基金」要算娛樂、「買車頭期」要算儲蓄。
+   ⚠「基金」刻意不算投資關鍵字（旅遊基金／教育基金／夢想基金多半與投資無關）。
+────────────────────────────────────────────────────────────────── */
+const ANAME  = {life:'第 1 格',fun:'第 2 格',save:'第 3 格',invest:'第 4 格',
+                learn:'第 5 格',give:'第 6 格',pocket:'現金'};
+const ROLE_NAME={life:'生活',fun:'娛樂',save:'儲蓄',invest:'投資',learn:'學習',give:'貢獻'};
+const ROLE_RE=[
+  ['give',  /公益|捐款|捐贈|捐獻|貢獻|奉獻|慈善|佈施|布施|愛心|回饋/],
+  ['learn', /學習|教育|進修|成長|自我投資|投資自己|課程|上課|培訓|知識|充電|書/],
+  ['fun',   /娛樂|玩樂|旅遊|旅行|出國|享受|興趣|嗜好|放鬆|大餐|美食|追劇|遊戲|血拼|購物|健身|運動/],
+  ['save',  /儲蓄|存錢|存款|定存|備用金|預備金|緊急|頭期|保命|安全感/],
+  ['invest',/投資|理財|股票|股市|ETF|債券|房產|不動產|資產|被動收入|配息|加密|虛擬貨幣/],
+  ['life',  /生活|日常|開銷|必要|固定支出|房租|房貸|伙食|飲食|吃飯|交通|水電|孝親|家用|保險|醫療|電話費/]
+];
+/* 名字逐月保存（key＝生效月份，跟 alloc 同一個寫法）。改名只從當月起生效。
+   ⚠ 一定要記月份：重播引擎是從第 1 月重算的，若只存一份名字，
+     第 8 月才把某格改名叫「娛樂」，第 3 月的壓力事件會追溯變成有折抵＝作弊。 */
+function namesAt(i,r){
+  for(let m=Math.max(1,r|0); m>=1; m--){
+    const a=CS.accNames && CS.accNames[m];
+    if(a && a[i]) return a[i];
+  }
+  return ['','','','','',''];
+}
+function setNamesAt(i,r,arr){
+  if(!CS.accNames) CS.accNames={};
+  if(!CS.accNames[r]) CS.accNames[r]=[null,null,null,null,null,null];
+  CS.accNames[r][i]=arr.slice(0,6).map(x=>(x||'').trim().slice(0,6));
+  _rmCache={}; saveCS();
+}
+function nameSet(i,r){ return namesAt(i,r).some(n=>(n||'').trim()); }
+/* 這一格叫什麼；沒取名就顯示「第 N 格」 */
+function aName(k,i,r){
+  const idx=ACCS.indexOf(k);
+  if(idx<0) return ANAME[k]||k;
+  const n=(namesAt(i, r||curRound()||1)[idx]||'').trim();
+  return n || ANAME[k];
+}
+/* 角色 → 格子代號。算過就記起來，重播一次會問很多遍。 */
+let _rmCache={};
+function roleMap(i,r){
+  const ns=namesAt(i,r), key=i+'|'+ns.join('~');
+  if(_rmCache[key]) return _rmCache[key];
+  const out={};
+  for(let s=0;s<ACCS.length;s++){
+    const nm=(ns[s]||'').trim(); if(!nm) continue;
+    for(const pair of ROLE_RE){
+      const role=pair[0];
+      if(out[role]) continue;            /* 這個角色已經被前面的格子拿走了 */
+      if(pair[1].test(nm)){ out[role]=ACCS[s]; break; }
+    }
+  }
+  return (_rmCache[key]=out);
+}
+/* 這位學員第 r 月有沒有「投資帳戶」之類的角色；沒有就回 ''（例如他根本沒開） */
+function slotOf(i,r,role){ return roleMap(i,r)[role] || ''; }
+/* 扣款順序：認出來的照規則書的順序，認不出來的排最後 */
+const ROLE_ORDER=['life','invest','learn','save','fun','give'];
+function payOrder(i,r){
+  const rm=roleMap(i,r), out=['pocket'], seen={};
+  ROLE_ORDER.forEach(role=>{ const k=rm[role]; if(k && !seen[k]){ out.push(k); seen[k]=1; } });
+  ACCS.forEach(k=>{ if(!seen[k]){ out.push(k); seen[k]=1; } });
+  return out;
 }
 const ACOLOR= {life:'#4A7C59',fun:'#C7784A',save:'#46789B',invest:'#97742A',learn:'#7C68A6',give:'#B4566B'};
-/* 扣款順序：與主控台 index.html:1366 完全相同，兩端算出來的數字才會一樣 */
-/* 錢不夠時動用帳戶的順序（2026-08-11 改版：現金排最前、娛樂進鏈、儲蓄排在學習後面） */
-const PORDER= ['pocket','life','invest','learn','save','fun','give'];
+/* 扣款順序改由 payOrder(i,r) 依「每個人自己取的名字判定出來的角色」現算；
+   ROLE_ORDER 定義在上面的角色判定區塊，與學員台完全同一份。 */
 const PHS   = ['salary','allocate','event','drawn','expense'];
 const PRESET= { ml:{life:0,fun:0,save:0,invest:0,learn:0,give:0},
                 std:{life:60,fun:10,save:10,invest:10,learn:5,give:5} };
 
 function newLedger(){
-  return { v:8, room:'VISION', table:1, n:6, names:['','','','','',''],
-           giveNames:['','','','','',''],
+  return { v:9, room:'VISION', table:1, n:6, names:['','','','','',''],
+           accNames:{},
            alloc:{}, mlog:{}, marks:{}, fixes:[], repay:[],
            cur:{k:'',i:0}, finKey:'', manual:false, mRound:1, mAct:'' };
 }
@@ -378,7 +435,7 @@ function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e
 function loadCS(){
   /* v1 的舊帳本沒有帳戶資料，算不出正確數字，一律作廢重來（順便解掉「打開就是上一場」） */
   try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
-       const o=JSON.parse(raw); return (o&&o.v===8)?o:null; }catch(e){ return null; }
+       const o=JSON.parse(raw); return (o&&o.v===9)?o:null; }catch(e){ return null; }
 }
 function nameOf(i){ return (CS.names[i]||'').trim() || ('學員 '+LET[i]); }
 
@@ -571,6 +628,14 @@ function allocLaterThan(i,r){
 }
 function allocSum(a){ return ACCS.reduce((s,k)=>s+(a[k]||0),0); }
 function allocCount(a){ return ACCS.filter(k=>(a[k]||0)>0).length; }
+/* 帳戶改名，寫進「這次設定生效的那個月」——跟分配比例同一個時點。
+   改名只從那個月起生效，不會追溯改變前面幾個月已經算過的判定。 */
+function setAccName(i,k,v){
+  const tr=allocTarget();
+  const arr=namesAt(i,tr).slice();
+  arr[ACCS.indexOf(k)]=(v||'').trim().slice(0,6);
+  setNamesAt(i,tr,arr);
+}
 function setAllocAt(i,r,obj){
   if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
   CS.alloc[r][i]=obj; saveCS();
@@ -698,18 +763,19 @@ function elog(X,i,r,t,c){ X.log[i].push({r,t,c:c||''}); }
    回傳一份明細，畫面直接拿去顯示——螢幕上寫的就是引擎真的算的，不可能對不上。 */
 /* 投資賠錢先掏投資帳戶（投資的事只能用投資的錢），掏不夠才走一般扣款鏈、最後被迫負債 */
 function payInvestFirst(X,i,amt,label,r,mm,chAcc){
-  const use=Math.min(X.A[i].invest, Math.round(amt));
-  if(use>0){ X.A[i].invest-=use; elog(X,i,r,`${label}：投資帳戶付 ${fm(use)}`,'bad'); }
+  const iv=slotOf(i,r,'invest');                 /* 沒開投資帳戶就沒有這一步 */
+  const use=iv ? Math.min(X.A[i][iv], Math.round(amt)) : 0;
+  if(use>0){ X.A[i][iv]-=use; elog(X,i,r,`${label}：${aName(iv,i,r)}帳戶付 ${fm(use)}`,'bad'); }
   const rest=Math.round(amt)-use;
-  if(rest<=0) return { amt:Math.round(amt), used:[{k:'invest',use}], borrowed:0, short:0 };
+  if(rest<=0) return { amt:Math.round(amt), used:[{k:iv,use}], borrowed:0, short:0 };
   const d=payFrom(X,i,rest,label,r,true,mm,chAcc);
   d.amt=Math.round(amt);
-  if(use>0) d.used=[{k:'invest',use}].concat(d.used||[]);
+  if(use>0) d.used=[{k:iv,use}].concat(d.used||[]);
   return d;
 }
 function payFrom(X,i,amt,label,r,borrow,mm,chAcc){
   let need=Math.round(amt); const used=[];
-  for(const k of PORDER){
+  for(const k of payOrder(i,r)){
     if(need<=0) break;
     const bal = k==='pocket'?X.pocket[i]:X.A[i][k];
     const use = Math.min(bal,need);
@@ -724,7 +790,7 @@ function payFrom(X,i,amt,label,r,borrow,mm,chAcc){
   }
   const det={ amt:Math.round(amt), used, borrowed:0, short:need };
   if(used.length){
-    const from=used.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、');
+    const from=used.map(u=>(u.k==='incoming'?'待分配':aName(u.k,i,r))+' '+fm(u.use)).join('、');
     elog(X,i,r,`${label} ${fm(amt)}　←　${from}`);
   }
   if(borrow===false || need<=0){
@@ -736,11 +802,12 @@ function payFrom(X,i,amt,label,r,borrow,mm,chAcc){
   X.debt[i]+=got;
   /* 借來付帳單，多出來的零頭由學員自己決定放哪一格（預設生活帳戶） */
   const change=got-need;
-  const acc=ACCS.indexOf(chAcc)>=0 ? chAcc : 'life';
+  const dflt=slotOf(i,r,'life') || payOrder(i,r).filter(k=>k!=='pocket')[0];
+  const acc=ACCS.indexOf(chAcc)>=0 ? chAcc : dflt;
   if(change>0) X.A[i][acc]+=change;
   det.borrowed=got; det.short=need; det.change=change; det.changeAcc=acc;
   elog(X,i,r,`${label} 付不出來 → 被迫負債 ${fm(got)}（${units} 個 ${fm(U)}，月息 ${Math.round(((mm&&mm.rate)||.1)*100)}%）`
-    +(change>0?`；找零 ${fm(change)} 放進${ANAME[acc]}帳戶`:''),'bad');
+    +(change>0?`；找零 ${fm(change)} 放進${aName(acc,i,r)}帳戶`:''),'bad');
   return det;
 }
 /* 按比例分流一筆收入（發薪、好消息卡共用） */
@@ -797,14 +864,14 @@ function applyFixes(X,r){
     if(fx.r!==r) return;
     if(fx.k2){   /* 搬錢：一筆搞定，總額永遠守恆 */
       const moved=fixTake(fx.i,fx.k,fx.amt); fixGive(fx.i,fx.k2,moved);
-      elog(X,fx.i,r,`搬錢：${ANAME[fx.k]||fx.k} → ${ANAME[fx.k2]||fx.k2} ${fm(moved)}`
+      elog(X,fx.i,r,`搬錢：${aName(fx.k,fx.i,r)} → ${aName(fx.k2,fx.i,r)} ${fm(moved)}`
         +(moved<fx.amt?`（原本要搬 ${fm(fx.amt)}，那個月只搬得出 ${fm(moved)}）`:''),'fix');
       return;
     }
     if(ACCS.indexOf(fx.k)>=0) X.A[fx.i][fx.k]=Math.max(0,X.A[fx.i][fx.k]+fx.amt);
     else if(fx.k==='pocket') X.pocket[fx.i]=Math.max(0,X.pocket[fx.i]+fx.amt);
     else if(X[fx.k]) X[fx.k][fx.i]=Math.max(0,X[fx.k][fx.i]+fx.amt);
-    elog(X,fx.i,r,`人工更正：${ANAME[fx.k]||fx.k} ${fx.amt>0?'+':''}${fm(fx.amt)}`,'fix');
+    elog(X,fx.i,r,`人工更正：${aName(fx.k,fx.i,r)} ${fx.amt>0?'+':''}${fm(fx.amt)}`,'fix');
   });
 }
 
@@ -843,7 +910,7 @@ function phSalary(X,r,f){
         const pay=u*(s.perUnit||0);
         const acc=acctFor(markGet(r,'salary','st_'+s.id),i,r,'invest');
         X.A[i][acc]+=pay; d2.push({amt:pay,u,owe:0,acc});
-        elog(X,i,r,`${s.title} 開牌：${u} 單位 × ${fm(s.perUnit)} ＝ ${fm(pay)} 進${ANAME[acc]}帳戶`,'good');
+        elog(X,i,r,`${s.title} 開牌：${u} 單位 × ${fm(s.perUnit)} ＝ ${fm(pay)} 進${aName(acc,i,r)}帳戶`,'good');
       }
     }
     X.det[r+'|salary|st_'+s.id]=d2;
@@ -859,7 +926,7 @@ function phAllocate(X,r,f){
     const sp=spread(X,i,r,inc);
     det.push({inc, parts:sp.parts, rest:sp.rest, al:sp.al});
     elog(X,i,r, sp.parts.length
-      ? `分配 ${fm(inc)}：${sp.parts.map(p=>ANAME[p.k]+' '+fm(p.a)).join('、')}${sp.rest>0?'、現金 '+fm(sp.rest):''}`
+      ? `分配 ${fm(inc)}：${sp.parts.map(p=>aName(p.k,i,r)+' '+fm(p.a)).join('、')}${sp.rest>0?'、現金 '+fm(sp.rest):''}`
       : `沒有分帳戶，${fm(inc)} 全部放身上`, sp.parts.length?'':'warn');
   }
   X.det[r+'|allocate|alloc']=det;
@@ -875,7 +942,8 @@ function phDrawn(X,r,f){
     const h=X.hold[c.id] || (X.hold[c.id]={title:c.title,price:c.unit,cf:c.cf||0,buy:r,units:z6(),st:null});
     h.price=c.unit; h.cf=c.cf||0;
     for(let i=0;i<MAXSTU;i++){
-      const avail=X.A[i].invest;
+      const ik=slotOf(i,r,'invest');             /* 沒開投資帳戶＝這張牌他買不了 */
+      const avail=ik?X.A[i][ik]:0;
       const u=m.cnt[i]||0;
       h.units[i]=u;
       if(!u){ det.push({u:0,avail,cost:0,borrowed:0}); continue; }
@@ -885,13 +953,13 @@ function phDrawn(X,r,f){
       /* 借的比這張投資貴（最多多一個單位，bumpLoan 有擋），多出來的錢學員自己決定放哪一格 */
       const spare=want-borrowed;
       const spareAcc=acctOf(m,i,'invest');
-      const fromAcc=Math.min(X.A[i].invest, cost-borrowed);
-      X.A[i].invest-=fromAcc; X.loan[i]+=want;
+      const fromAcc=Math.min(X.A[i][ik], cost-borrowed);
+      X.A[i][ik]-=fromAcc; X.loan[i]+=want;
       if(spare>0) X.A[i][spareAcc]+=spare;
       det.push({u,avail,cost,borrowed,fromAcc,spare,spareAcc});
       elog(X,i,r,`投資「${c.title}」${c.one?`一筆 ${fm(cost)}`:`${u} 單位 ＝ ${fm(cost)}`}`
         +(borrowed?`（其中 ${fm(borrowed)} 是跟銀行借的）`:'')
-        +(spare>0?`；多借的 ${fm(spare)} 放進${ANAME[spareAcc]}帳戶`:''),'inv');
+        +(spare>0?`；多借的 ${fm(spare)} 放進${aName(spareAcc,i,r)}帳戶`:''),'inv');
     }
     if(!h.units.some(u=>u>0)) delete X.hold[c.id];
     X.det[r+'|drawn|card_'+c.id]=det;
@@ -925,11 +993,12 @@ function phDrawn(X,r,f){
 function takeWithFun(X,i,r,cost,label,useFun,f,chAcc){
   const per=(f&&f.per)||2000, cov=(f&&f.cover)||10000;
   let covered=0, chunks=0;
-  if(useFun){
-    chunks=Math.min(Math.floor(X.A[i].fun/per), Math.ceil(cost/cov));
+  const fk=slotOf(i,r,'fun');                    /* 沒開娛樂帳戶＝沒有折抵這回事 */
+  if(useFun && fk){
+    chunks=Math.min(Math.floor(X.A[i][fk]/per), Math.ceil(cost/cov));
     covered=Math.min(cost, chunks*cov);
-    if(chunks>0){ X.A[i].fun-=chunks*per;
-      elog(X,i,r,`${label}：娛樂帳戶 ${fm(chunks*per)} 折抵 ${fm(covered)}`,'good'); }
+    if(chunks>0){ X.A[i][fk]-=chunks*per;
+      elog(X,i,r,`${label}：${aName(fk,i,r)}帳戶 ${fm(chunks*per)} 折抵 ${fm(covered)}`,'good'); }
   }
   const rest=cost-covered;
   if(rest<=0){ elog(X,i,r,`${label}：娛樂預算全額抵銷，一毛不用付`,'good');
@@ -950,12 +1019,13 @@ function phExpense(X,r,f){
     let rest=exp0, savePaid=0, saveCovered=0;
     if(f.jobless && exp0>0){
       const need=Math.ceil(exp0/nm.joblessSaveCover);
-      const have=Math.floor(X.A[i].save/nm.joblessSaveUnit);
+      const sk=slotOf(i,r,'save');               /* 沒開儲蓄帳戶＝這個月沒有保命符 */
+      const have=sk?Math.floor(X.A[i][sk]/nm.joblessSaveUnit):0;
       const use=Math.min(need,have);
       if(use>0){
         savePaid=use*nm.joblessSaveUnit;
         saveCovered=Math.min(exp0, use*nm.joblessSaveCover);
-        X.A[i].save-=savePaid; rest=exp0-saveCovered;
+        X.A[i][sk]-=savePaid; rest=exp0-saveCovered;
         elog(X,i,r,`停薪月：儲蓄 ${fm(savePaid)} 抵掉 ${fm(saveCovered)} 生活費${rest>0?`，還要付 ${fm(rest)}`:'，這個月不用再付'}`,'good');
       }
     }
@@ -989,9 +1059,10 @@ function phExpense(X,r,f){
   if(X.mlOn){
     for(let i=0;i<MAXSTU;i++){
       if(allocCount(allocOf(i,r))>=2) continue;
-      const gone=X.pocket[i]+X.A[i].life;
+      const lk=slotOf(i,r,'life');               /* 沒開生活帳戶就只沒收現金 */
+      const gone=X.pocket[i]+(lk?X.A[i][lk]:0);
       if(gone>0) elog(X,i,r,`無意識消費：沒有分帳戶 → 現金＋生活帳戶 ${fm(gone)} 全數消失`,'bad');
-      X.pocket[i]=0; X.A[i].life=0;
+      X.pocket[i]=0; if(lk) X.A[i][lk]=0;
     }
   }
 }
@@ -1010,29 +1081,30 @@ function phFixed(X,r,f,fx,nm){
     case 'know':
       for(let i=0;i<MAXSTU;i++){
         /* 入帳也要夾住：只有扣款夾、入帳不夾的話，上限一旦算錯就會憑空多出每月收入 */
-        const avail=X.A[i].learn, u=Math.min(m.cnt[i]||0, Math.floor(avail/nm.knowUnit)), amt=u*nm.knowUnit;
-        if(amt>0){ X.A[i].learn-=amt; X.other[i]+=amt;
+        const lk=slotOf(i,r,'learn');            /* 沒開學習帳戶＝這一步跟他無關 */
+        const avail=lk?X.A[i][lk]:0, u=Math.min(m.cnt[i]||0, Math.floor(avail/nm.knowUnit)), amt=u*nm.knowUnit;
+        if(amt>0){ X.A[i][lk]-=amt; X.other[i]+=amt;
           elog(X,i,r,`知識變現：學習帳戶 ${fm(amt)} 換成每月主動收入 +${fm(amt)}（停薪月不發，復工才領）`,'good'); }
         det.push({u,avail,amt});
       }
       break;
     case 'charity':
       /* 貢獻帳戶付得起的份數算 ×giveBoost 捐款額，超出的份數用其他的錢付、只算 1:1。
-         ★ 第六格要被學員命名成「公益／捐款／貢獻」之類，才算貢獻帳戶。 */
+         ★ 要有某一格被學員命名成「公益／捐款／貢獻」之類，才算貢獻帳戶。 */
       for(let i=0;i<MAXSTU;i++){
-        const isG=isGiveAcc(i);
-        const avail=isG?X.A[i].give:0, u=m.cnt[i]||0, amt=u*nm.charityUnit;
-        const boost=isG?(nm.giveBoost||1):1;
+        const gk=slotOf(i,r,'give');             /* 沒把某格命名成公益／捐款／貢獻＝沒有倍數 */
+        const avail=gk?X.A[i][gk]:0, u=m.cnt[i]||0, amt=u*nm.charityUnit;
+        const boost=gk?(nm.giveBoost||1):1;
         const fromGive=Math.min(amt, Math.floor(avail/nm.charityUnit)*nm.charityUnit);
         const fromCash=amt-fromGive;
         const d={u,avail,amt,fromGive,fromCash,credit:0,used:[],borrowed:0,short:0};
-        if(fromGive>0){ X.A[i].give-=fromGive; d.credit+=fromGive*boost; d.used.push({k:'give',use:fromGive}); }
+        if(fromGive>0){ X.A[i][gk]-=fromGive; d.credit+=fromGive*boost; d.used.push({k:gk,use:fromGive}); }
         if(fromCash>0){
           const p=payFrom(X,i,fromCash,'公益捐款（現金）',r,false,f);
           d.credit+=fromCash-p.short; d.used=d.used.concat(p.used||[]); d.short=p.short;
         }
         if(d.credit>0){ X.donated[i]+=d.credit;
-          elog(X,i,r,`公益捐款 ${fm(amt-d.short)}${fromGive?`（${gname(i)} ${fm(fromGive)} ×${boost}）`:''}${fromCash?`＋現金 ${fm(fromCash-d.short)}`:''} → 捐款額 ${fm(d.credit)}（累計 ${fm(X.donated[i])}）`,'good'); }
+          elog(X,i,r,`公益捐款 ${fm(amt-d.short)}${fromGive?`（${aName(gk,i,r)} ${fm(fromGive)} ×${boost}）`:''}${fromCash?`＋現金 ${fm(fromCash-d.short)}`:''} → 捐款額 ${fm(d.credit)}（累計 ${fm(X.donated[i])}）`,'good'); }
         det.push(d);
       }
       break;
@@ -1076,8 +1148,9 @@ function phFixed(X,r,f,fx,nm){
       for(let i=0;i<MAXSTU;i++){
         const changed=allocIsSet(i,r+1);
         if(!(first&&changed)){ det.push({changed, fee:0}); continue; }
-        if(X.A[i].learn>=cheap){
-          X.A[i].learn-=cheap;
+        const lk2=slotOf(i,r,'learn');
+        if(lk2 && X.A[i][lk2]>=cheap){
+          X.A[i][lk2]-=cheap;
           elog(X,i,r,`預算重分配：用學習帳戶付 ${fm(cheap)}（平時有投資自己，學費打兩折）`,'good');
           det.push({changed, fee:cheap, byLearn:true, used:[{k:'learn',use:cheap}], borrowed:0, short:0, amt:cheap});
         }else{
@@ -1330,7 +1403,7 @@ function fixedStep(f,r){
       stp.subOf=(i)=>{
         const D=detOf(stp,i);
         if(!D || !D.owe) return '沒有欠款，不用收';
-        const src=(D.srcs&&D.srcs.length) ? D.srcs.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、') : '帳戶裡沒錢可收';
+        const src=(D.srcs&&D.srcs.length) ? D.srcs.map(u=>(u.k==='incoming'?'待分配':aName(u.k,i,curRound()))+' '+fm(u.use)).join('、') : '帳戶裡沒錢可收';
         return `欠 ${fm(D.owe)}　→　從 ${src}` + (D.left>0 ? `　還欠 ${fm(D.left)}（帶進結算）` : '　全部還清');
       };
       return stp;
@@ -1339,7 +1412,7 @@ function fixedStep(f,r){
       return Object.assign(base,{ mode:'count', unitAmt:nm.charityUnit, take:true, acct:'give', alsoCash:true,
         title:'公益勸募', money:null,
         note:'想捐的人自己說要捐多少，一下 '+fm(nm.charityUnit)+'。'
-            +'如果他把第六格命名成「公益／捐款／貢獻」之類的意思，那一格付得起的部分算 '+(nm.giveBoost||1)+' 倍捐款額；'
+            +'如果他把某一格命名成「公益／捐款／貢獻」之類的意思，那一格付得起的部分算 '+(nm.giveBoost||1)+' 倍捐款額；'
             +'其餘的錢捐算 1 比 1——系統會自己判斷、自己算，你只要照他說的份數點。'
             +'累計捐款額會記住，重大事故那個月會用到。',
         why:'佈施看似給出去，其實是替自己佈下一張安全網——專款專用的人，同樣一千塊效果差十倍。' });
@@ -1514,7 +1587,7 @@ function renderGrid(st){
       big = money(amt);
       sub = st.subOf? st.subOf(i) : '';
       if(!sub && D && D.parts && D.parts.length)
-        sub = '會分成 '+D.parts.map(p=>ANAME[p.k]+' '+fm(p.a)).join('、')+(D.rest>0?('、現金 '+fm(D.rest)):'');
+        sub = '會分成 '+D.parts.map(p=>aName(p.k,i)+' '+fm(p.a)).join('、')+(D.rest>0?('、現金 '+fm(D.rest)):'');
       /* 額外收入（開牌收益、好事卡）：學員自己決定進哪一格，但只列他有設定比例的帳戶 */
       if(st.id.indexOf('st_')===0 && amt>0) pick=acctPick(st,i,'invest','這筆放進',false,true);
       if(st.id.indexOf('card_')===0 && amt>0 && allocSum(allocOf(i,curRound()))>0)
@@ -1529,7 +1602,7 @@ function renderGrid(st){
         if(D.waived) bits.push(`用儲蓄 ${fm(D.waived)} 換掉生活費`);
         if(D.covered) bits.push(`娛樂折抵 ${fm(D.covered)}`);
         if(D.keep) bits.push(`貴人保留 ${fm(D.keep)}`);
-        if(D.used && D.used.length) bits.push(D.used.map(u=>(ANAME[u.k]||'待分配')+' '+fm(u.use)).join('、'));
+        if(D.used && D.used.length) bits.push(D.used.map(u=>(u.k==='incoming'?'待分配':aName(u.k,i))+' '+fm(u.use)).join('、'));
         if(D.interest) bits.push(`含利息 ${fm(D.interest)}`);
       }
       /* 欠著錢但帳戶掏空的人，大字寫「不用付」會讓志工以為他沒事——跟真的沒欠款分開講 */
@@ -1557,9 +1630,9 @@ function renderGrid(st){
         /* 志工要對的是桌上的籌碼，所以優先顯示金額；沒收入時才顯示百分比 */
         const on=ACCS.filter(k=>al[k]>0);
         sub = inc>0
-          ? on.map(k=>ANAME[k]+' '+fm(Math.floor(inc*al[k]/100))).join('　')
+          ? on.map(k=>aName(k,i)+' '+fm(Math.floor(inc*al[k]/100))).join('　')
             + (allocSum(al)<100 ? `　現金 ${fm(inc-on.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}` : '')
-          : on.map(k=>ANAME[k]+' '+al[k]+'%').join('　');
+          : on.map(k=>aName(k,i)+' '+al[k]+'%').join('　');
       }
       mini=`<div class="mini"><button onclick="event.stopPropagation();openDrawer('alloc',${i})">設定</button>`
         + (st.id==='fx_realloc' ? `<button class="gold" onclick="event.stopPropagation();openDrawer('move',${i})">搬錢</button>` : '')
@@ -1588,7 +1661,7 @@ function renderGrid(st){
       if(u) cls.push('picked');
       big = u? money(amt) : '—';
       sub = u? `${u} 份 × ${fm(st.unitAmt)}${st.take?'（跟他收）':''}${(D&&D.credit&&D.credit!==amt)?`　捐款額記 ${fm(D.credit)}`:''}`
-             : (cap>0? `${ANAME[st.acct]||''}帳戶 ${fm(avail)}　最多 ${cap} 份` : `${ANAME[st.acct]||''}帳戶沒錢，做不了`);
+             : (cap>0? `${aName(slotOf(i,curRound(),st.acct),i)}帳戶 ${fm(avail)}　最多 ${cap} 份` : `${aName(slotOf(i,curRound(),st.acct),i)}帳戶沒錢，做不了`);
       mini=`<div class="mini"><button onclick="event.stopPropagation();bumpUnit(${i},-1)">−</button></div>`;
     }
     else { /* check */
@@ -1718,7 +1791,7 @@ function bumpUnit(i,d){
       if(nx>cap){
         toast(st.alsoCash
           ? `${nameOf(i)} 的錢只夠捐 ${cap} 份（貢獻帳戶 ${fm(avail)}，其餘從他身上的錢出）。`
-          : `${nameOf(i)} 的${ANAME[st.acct]||''}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`);
+          : `${nameOf(i)} 的${aName(slotOf(i,curRound(),st.acct),i)}帳戶只剩 ${fm(avail)}，最多 ${cap} 份。`);
         return;
       }
     }
@@ -1814,13 +1887,15 @@ function allocPanel(i){
   const inc=(E&&E.incTot[i])||0;
   const rows=ACCS.map(k=>`
     <div class="alrow">
-      <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i>${
-        k==='give'
-          ? `<input type="text" maxlength="6" value="${String(gname(i)==='第六格'?'':gname(i)).replace(/"/g,'&quot;')}"
-               placeholder="他自己命名" oninput="setGiveName(${i},this.value)" onblur="render()"
-               style="width:82px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
-                      border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">`
-          : ANAME[k]}</span>
+      <span class="an"><i class="adot" style="background:${ACOLOR[k]}"></i><input type="text" maxlength="6"
+          value="${String(namesAt(i,tr)[ACCS.indexOf(k)]||'').replace(/"/g,'&quot;')}" placeholder="他自己命名"
+          oninput="setAccName(${i},'${k}',this.value)" onblur="render()"
+          style="width:76px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
+                 border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">
+        <small style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
+          (namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()
+            ? ((function(){ const rm=roleMap(i,tr); for(const rr in rm){ if(rm[rr]===k) return '算 '+ROLE_NAME[rr]; } return '一般帳戶'; })())
+            : ''}</small></span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
         onfocus="this.select()" oninput="setAllocK(${i},'${k}',this.value)" onblur="snapAlloc(${i},'${k}',this)">
@@ -1874,7 +1949,7 @@ function setAllocK(i,k,v){
   const raw=parseInt(v,10)||0, val=Math.max(0,Math.min(left,raw));
   if(raw!==val){
     const el=$('#ain-'+k); if(el) el.value=val;
-    toast(`六個帳戶加起來不能超過 100%，${ANAME[k]}最多只能填 ${left}%`);
+    toast(`六個帳戶加起來不能超過 100%，${aName(k,i,tr)}最多只能填 ${left}%`);
   }
   al[k]=val;
   setAllocAt(i,tr,al); render(); paintAlloc(i);
@@ -1891,7 +1966,7 @@ function snapAlloc(i,k,el){
   if(val===raw){ el.value=raw||''; return; }
   el.value=val||'';
   al[k]=val; setAllocAt(i,tr,al); render(); paintAlloc(i);
-  toast(`比例以 5% 為單位，${ANAME[k]}幫你調成 ${val}%`);
+  toast(`比例以 5% 為單位，${aName(k,i,tr)}幫你調成 ${val}%`);
 }
 function setPreset(i,p){
   setAllocAt(i,allocTarget(),Object.assign({},PRESET[p]));
@@ -1988,7 +2063,7 @@ function movePanel(i){
       <div class="v"><select id="mvTo" style="font:inherit;font-size:15px;padding:8px;border:1.5px solid var(--line-2);border-radius:8px;max-width:100%">${opts('invest')}</select></div></div>
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)" onclick="doMove(${i})">確 定 搬 過 去</button>
     <div class="dsec">現 在 各 格 有 多 少</div>
-    ${ACCS.map(k=>`<div class="drow"><div class="k"><i class="adot" style="background:${ACOLOR[k]}"></i>${ANAME[k]}</div>
+    ${ACCS.map(k=>`<div class="drow"><div class="k"><i class="adot" style="background:${ACOLOR[k]}"></i>${aName(k,i)}</div>
        <div class="v">${fm(E.A[i][k])}</div></div>`).join('')}
     <div class="drow"><div class="k"><i class="adot" style="background:#9A9484"></i>現金</div>
       <div class="v">${fm(E.pocket[i]+E.incoming[i])}</div></div>`;
@@ -1999,11 +2074,11 @@ function doMove(i){
   if(amt<=0){ toast('請先填要搬多少'); return; }
   if(from===to){ toast('來源和目的地是同一格'); return; }
   const bal = from==='pocket' ? (E.pocket[i]+E.incoming[i]) : E.A[i][from];
-  if(amt>bal){ toast(`${ANAME[from]}只有 ${fm(bal)}，搬不了那麼多`); return; }
+  if(amt>bal){ toast(`${aName(from,i)}只有 ${fm(bal)}，搬不了那麼多`); return; }
   const r=Math.max(1,curRound());
   CS.fixes.push({r,i,k:from,k2:to,amt});   /* 一筆＝一次搬移；重播時來源不夠就有多少搬多少 */
   saveCS(); render(); openDrawer('move',i);
-  toast(`${ANAME[from]} → ${ANAME[to]} 搬了 ${fm(amt)}`);
+  toast(`${aName(from,i)} → ${aName(to,i)} 搬了 ${fm(amt)}`);
 }
 function adjAcc(k,i,d){
   const r=Math.max(1,curRound());
