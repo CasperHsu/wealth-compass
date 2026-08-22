@@ -603,6 +603,8 @@ const ACOLOR= {life:'#4A7C59',fun:'#C7784A',save:'#46789B',invest:'#97742A',lear
 /* 扣款順序改由 payOrder(i,r) 依「每個人自己取的名字判定出來的角色」現算：
    認出來的照規則書的順序（現金→生活→投資→學習→儲蓄→娛樂→貢獻），
    認不出來的普通帳戶排最後。ROLE_ORDER 定義在上面的角色判定區塊。 */
+const PRESET_NAMES=['生活','娛樂','儲蓄','投資','學習','貢獻'];   /* 只有第二輪的「標準六帳戶」會用到 */
+const NAME_FIRST='先幫這一格取個名字，才能分配比例';
 const PHS   = ['salary','allocate','event','drawn','expense'];
 const PRESET= { ml:{life:0,fun:0,save:0,invest:0,learn:0,give:0},
                 std:{life:60,fun:10,save:10,invest:10,learn:5,give:5} };
@@ -819,8 +821,15 @@ function allocCount(a){ return ACCS.filter(k=>(a[k]||0)>0).length; }
 function setAccName(i,k,v){
   const tr=allocTarget();
   const arr=namesAt(i,tr).slice();
-  arr[ACCS.indexOf(k)]=(v||'').trim().slice(0,6);
+  const nv=(v||'').trim().slice(0,6);
+  arr[ACCS.indexOf(k)]=nv;
   setNamesAt(i,tr,arr);
+  /* 名字清掉＝這一格等於不存在，比例要一起歸零，
+     不然畫面上會出現「沒有名字卻裝著錢」的格子 */
+  if(!nv){
+    const al=Object.assign(zAcc(), allocOf(i,tr));
+    if(al[k]>0){ al[k]=0; setAllocAt(i,tr,al); }
+  }
 }
 function setAllocAt(i,r,obj){
   if(!CS.alloc[r]) CS.alloc[r]=[null,null,null,null,null,null];
@@ -2204,7 +2213,7 @@ function restLine(al,inc){
   if(sum>100) return `超過 100% 了（多了 ${sum-100}%），請改回來`;
   if(sum===100) return '100% 都分完了，身上不留現金';
   const cash = inc>0 ? `（${fm(inc-ACCS.reduce((s,k)=>s+Math.floor(inc*al[k]/100),0))}）` : '';
-  return `沒分配到的 ${100-sum}% 會直接放在他身上當現金${cash}`;
+  return `沒分配到的 ${100-sum}% 會直接放在你身上當現金${cash}`;
 }
 function allocPanel(i){
   const tr=allocTarget(), nat=allocNatural(), fixing=(ALLOCAT===1 && nat>1);
@@ -2224,6 +2233,7 @@ function allocPanel(i){
           (ns[si]||'').trim() ? (roleTag(k)?'算 '+roleTag(k):'一般帳戶') : ''}</small></span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
+        ${(ns[si]||'').trim()?'':'disabled title="先取名字"'}
         onfocus="this.select()" oninput="setAllocK(${i},'${k}',this.value)" onblur="snapAlloc(${i},'${k}',this)">
       <span class="pc">%</span>
       <span class="am" id="am-${k}">${amtOf(inc,al[k])}</span>
@@ -2251,7 +2261,7 @@ function allocPanel(i){
     </div>
     <div class="apre">
       <button onclick="setPreset(${i},'ml')">我不分帳戶</button>
-      <button onclick="setPreset(${i},'std')">標準六帳戶</button>
+      ${(ST&&ST.coop)?`<button onclick="setPreset(${i},'std')">標準六帳戶</button>`:''}
     </div>
     ${fix}
     <button class="dbtn" style="border-color:var(--green);color:var(--green-900)"
@@ -2267,6 +2277,12 @@ function paintAlloc(i){
 }
 function setAllocK(i,k,v){
   const tr=allocTarget();
+  /* 先想清楚「這是什麼帳戶」，才輪到分多少——沒命名的格子放不進錢。
+     這樣第 2 月無意識消費數的「帳戶數」也自然只會數到真的分過類的格子。 */
+  if(!(namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()){
+    const el=$('#ain-'+k); if(el) el.value='';
+    toast(NAME_FIRST); return;
+  }
   const al=Object.assign(zAcc(), allocOf(i,tr));
   /* 六格加起來不能超過 100%——超過就當場壓回可用的上限，不然引擎會分出負數現金 */
   const left=Math.max(0, 100-(allocSum(al)-(al[k]||0)));
@@ -2293,7 +2309,10 @@ function snapAlloc(i,k,el){
   toast(`比例以 5% 為單位，${aName(k,i,tr)}幫你調成 ${val}%`);
 }
 function setPreset(i,p){
-  setAllocAt(i,allocTarget(),Object.assign({},PRESET[p]));
+  const tr=allocTarget();
+  /* 標準六帳戶要連名字一起帶進來，否則會變成「沒命名卻有比例」的格子 */
+  if(p==='std') setNamesAt(i,tr,PRESET_NAMES.slice());
+  setAllocAt(i,tr,Object.assign({},PRESET[p]));
   play('tick');
   render(); openDrawer('alloc',i);
 }
