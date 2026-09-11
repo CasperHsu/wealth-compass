@@ -1,30 +1,63 @@
-# 免費 Supabase 專案閒置 7 天會自動暫停，而這門課一個月才上一次，一定會踩到。
-# 暫停了會怎樣：志工「用自己平板」那條路連不上（同一台電腦跨分頁的退路仍然可用）。
-# 所以每天戳一下 wealth-compass 專案，讓它維持啟用。
+# ⚠ 這條排程已經在 2026-09-11 手動關閉（Actions 頁面顯示 disabled_manually）。
 #
-# 這裡直接寫 anon key 不是疏忽：同一個 repo 的 index.html 本來就印著它，
-# 它只能進出廣播頻道，專案裡沒有任何資料表，也關掉了公開註冊。
+# 原本的用意：免費 Supabase 專案閒置會被自動暫停，而這門課一個月才上一次，
+# 所以每天戳一下 wealth-compass，讓它維持啟用。
 #
-# 注意：GitHub 對「60 天沒有新 commit」的 repo 會自動停掉排程。
-# 若很久沒更新遊戲，記得到 Actions 頁面按一下 Enable，或手動 Run workflow。
+# 結果是沒有用的，而且是有證據的：
+#   2026-07-26 ～ 09-01  每天 success，每天回 HTTP 200，一天都沒漏
+#   2026-09-01 前後      專案照樣被暫停（狀態 INACTIVE、DNS 直接查不到）
+#   2026-09-02 ～        每天 failure（curl exit 6＝連網址都解析不出來）
+# 對照實際使用：7/26～8/22 幾乎天天在改在測，8/22 之後沒人碰，九天後就被收走。
+# 也就是說，讓專案活著的是「真的有人在用」，不是這支 workflow。
+# 戳 /auth/v1/settings 回 200 很開心，但顯然不算 Supabase 認定的「活動」。
+#
+# ── 暫停了會怎樣 ──────────────────────────────────────────────
+# 遊戲頁面本身完全不受影響（GitHub Pages 是另一條路，照常 200）。
+# 主控台投影、同一台電腦開兩個分頁（主控＋副控／學員）都照常能用——
+# 那條走的是瀏覽器內建的 BroadcastChannel，不經過 Supabase。
+# 壞掉的只有跨裝置：志工用自己的平板、學員用自己的手機會連不上，
+# 畫面上會出現紅色的「還沒連上講師」。
+#
+# ── 上課前要做的事（手動，別再指望自動化）──────────────────────
+# 1. 到 https://supabase.com/dashboard 找 wealth-compass 專案，按 Restore，
+#    等它跑完（幾分鐘）。專案 ref 是 xfxibwzmpysvyakuhdge。
+# 2. 用下面這行確認真的起來了（回 200 才算數）：
+#      curl -s -o /dev/null -w '%{http_code}\n' \
+#        https://xfxibwzmpysvyakuhdge.supabase.co/auth/v1/settings
+# 3. 拿另一支手機開 /student/ 實際連一次，看紅色橫幅有沒有消失。
+#    「回 200」只證明伺服器活著，不證明廣播頻道通。
+#
+# 想手動跑一次這個檢查：Actions → keepalive → Enable → Run workflow。
 name: keepalive
 
 on:
-  schedule:
-    - cron: '17 3 * * *'      # 每天 UTC 03:17（台灣時間 11:17）
-  workflow_dispatch:           # 也可以手動按一下，例如上課前一天
+  # 排程刻意拿掉。留 workflow_dispatch 讓它變成「上課前手動按一下的檢查」，
+  # 不再假裝自己能讓專案不被暫停。
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: 戳一下 Supabase，避免專案被自動暫停
+      - name: 檢查 Supabase 專案是不是醒著
+        # ⚠ 一定要留 `set +e`：預設的 `bash -e` 會在 curl 非零結束的當下直接中止，
+        #   下面那句寫給人看的說明永遠印不出來，信箱只會收到「All jobs have failed」。
+        #   2026-09 那十封嚇人的信就是這樣來的。
         run: |
+          set +e
           KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeGlid3ptcHlzdnlha3VoZGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDM0MDMsImV4cCI6MjEwMDU3OTQwM30.u0kA2XuBoQSgW7Mcf9BPlxLtLKYxwU3LUYAy6-I3Bxg'
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+          CODE=$(curl -s -m 15 -o /dev/null -w '%{http_code}' \
             -H "apikey: $KEY" \
             https://xfxibwzmpysvyakuhdge.supabase.co/auth/v1/settings)
-          echo "回應碼：$CODE"
-          if [ "$CODE" != "200" ]; then
-            echo "::warning::專案可能已被暫停或有異常，上課前請先到 Supabase 後台確認"
+          RC=$?
+          echo "curl 結束碼：$RC　HTTP：$CODE"
+          if [ "$CODE" = "200" ]; then
+            echo "✅ 專案是醒著的。但這只證明伺服器活著，還是要用手機開 /student/ 實連一次。"
+            exit 0
           fi
+          if [ "$RC" = "6" ]; then
+            echo "::error::專案被暫停了（連 DNS 都查不到）。到 Supabase 後台按 Restore，見本檔開頭的步驟。"
+          else
+            echo "::error::連不上（curl $RC／HTTP $CODE）。先確認網路，再到 Supabase 後台看專案狀態。"
+          fi
+          exit 1
