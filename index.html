@@ -404,6 +404,15 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
   letter-spacing:.1em;line-height:1.3;color:var(--green-900);
 }
 .ecard .flavor{text-align:center;font-size:16px;color:var(--ink-soft);max-width:680px;margin:8px auto 22px}
+/* 標題旁邊掛東西用（抽銀根轉盤）。
+   ⚠ 為什麼不是把轉盤放在分支上面：卡片一變高，fitPanel 就會先被高度卡住，
+     投影幕上整張卡反而縮小、左右白掉六百多像素（實測 1881→1286）。
+     掛在標題右邊是用掉本來就空著的橫向空間，高度只多一點點。 */
+.ehero{display:flex;align-items:center;gap:30px;justify-content:center}
+.ehero .eheroTxt{flex:1;min-width:0}
+.ehero .eheroTxt .flavor{margin-bottom:0}
+.ehero .eheroAside{flex:none}
+.ehero .wheelwrap{margin:0}
 .ebody{margin-bottom:24px}
 /* A/B 分支 */
 .branches{display:flex;gap:16px;justify-content:center}
@@ -961,6 +970,7 @@ function newState(){
   return {v:10, cfg, round:0, phase:'salary', started:false,
     deck:buildDeck(cfg), recap:{}, pend:[], demo:newDemo(), muted:false, coop:false,
     expenseBonus:0, budgetUnlocked:false, mindlessOn:false, preFix:{}, shown:{},
+    payoffHit:null,                    /* 第 12 月轉盤的結果：null＝還沒轉、true＝抽、false＝平安 */
     timer:{accumMs:0, runningSince:null}};
 }
 
@@ -996,6 +1006,7 @@ function load(){
       if(s.mindlessOn===undefined) s.mindlessOn=false;
       if(!s.preFix) s.preFix={};
       if(!s.shown) s.shown={};
+      if(s.payoffHit===undefined) s.payoffHit=null;
       /* 修復可能損壞的牌組（缺牌以平安月補上） */
       if(Array.isArray(s.deck)) s.deck=s.deck.map(id=>CAT[id]?id:'calm1');
       return s;
@@ -1178,8 +1189,11 @@ function syncFixed(rr){
     brief:`學習帳戶每 ${fm(c.knowUnit)} 可以 1 比 1 換成「每月固定收入」，不足一個單位的捨去（例如學習帳戶 38,000 只能換 30,000）。學員說要換多少，就從學習帳戶收走多少，之後每個月多發同樣的錢給他。這筆算主動收入，停薪月跟薪水一起停，等復工才開始發。`});
   if(r===c.joblessMonth-1) out.push({id:'jobless',title:'失業／公司倒閉',
     brief:`從下個月起連續 ${c.joblessLen} 個月（第 ${c.joblessMonth}、${c.joblessMonth+c.joblessLen-1} 月）停發主動收入——薪水與知識變現都停；投資的被動收入與其他現金流照領。儲蓄每 ${fm(c.joblessSaveUnit)} 可以抵 ${fm(c.joblessSaveCover)} 生活費（1 比 10），系統會自動抵到剛好夠、不會多扣；抵不完的差額照原本的順序從帳戶收。`});
-  if(r===c.payoffMonth) out.push({id:'payoff',title:'銀行要求全數還款',when:'pre',
-    brief:`銀行抽銀根：每一位名下所有的欠款這個月一次結清。每一格已經算好他實際還得出多少、從哪些帳戶扣，照著收就好；還不出來的部分留著，直接帶進結算。`});
+  if(r===c.payoffMonth) out.push(S.payoffHit===false
+    ? {id:'payoff',title:'銀行沒有抽銀根',when:'pre',
+       brief:`轉盤停在「平安」，這個月銀行沒有抽銀根。每一位的欠款與利息原封不動、直接帶進結算，這一關不用跟任何人收錢。`}
+    : {id:'payoff',title:'銀行要求全數還款',when:'pre',
+       brief:`銀行抽銀根：每一位名下所有的欠款這個月一次結清。每一格已經算好他實際還得出多少、從哪些帳戶扣，照著收就好；還不出來的部分留著，直接帶進結算。`});
   if(r===c.charityMonth) out.push({id:'charity',title:'公益勸募',
     brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位。從貢獻帳戶捐的算 ${c.giveBoost} 倍捐款額，用其他的錢捐算 1 比 1。務必記下每個人的捐款額，第 ${c.accidentMonth} 月會用到。`});
   if(r===c.accidentMonth) out.push({id:'accident',title:'重大事故',
@@ -1246,7 +1260,11 @@ function buildSyncState(){
            inflationExtra:c.inflationExtra, giveBoost:c.giveBoost,
            joblessSaveUnit:c.joblessSaveUnit, joblessSaveCover:c.joblessSaveCover, charityUnit:c.charityUnit,
            charityCover:c.charityCover, accidentCost:c.accidentCost,
-           unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn },
+           unlockFee:c.unlockFee, unlockFeeLearn:c.unlockFeeLearn,
+           /* 第 12 月轉盤的結果。放在 nums 而不是塞進 fixed 那一筆，
+              是因為斷線補算會從 sched／sealed 重建 fixed，那兩份只帶代號；
+              nums 是每個月都會完整廣播並記進 mlog 的，補算也查得到。 */
+           payoffHit:S.payoffHit },
     todo:syncTodo(),
     /* 只送講師已經翻出來的：沒翻的月底事件與開牌結果一律不廣播（見 reveal） */
     fixed:syncFixed().filter(f=>isShown('fx_'+f.id)),
@@ -1901,8 +1919,12 @@ function nextRound(){
     if(S.round===cfg.knowMonth){ demoKnowledge();
       queueOverlay(()=>{ reveal('fx_know'); play('fanfare'); openOverlay(knowledgeHTML(S.round), true); }); }
     /* 第 12 月月初：銀行抽銀根。排在發薪之前——先把帳還了，再看這個月剩下什麼 */
-    if(S.round===cfg.payoffMonth){ demoPayoff();
-      queueOverlay(()=>{ reveal('fx_payoff'); play('boom'); openOverlay(payoffHTML(), true); }); }
+    if(S.round===cfg.payoffMonth){
+      /* 轉盤只轉一次：按「上一步」再走回來，S 會連 payoffHit 一起還原，
+         所以那是刻意的重轉，不是這裡沒擋住。 */
+      if(S.payoffHit===null) S.payoffHit = (Math.random() < 0.25);
+      if(S.payoffHit) demoPayoff();
+      queueOverlay(()=>{ reveal('fx_payoff'); openPayoff(); }); }
     demoSalary();
     S.pend.filter(p=>p.due===S.round && !p.nosettle).forEach(p=>{
       demoSettle(p);
@@ -1937,14 +1959,21 @@ function restartGame(){
 /* =====================================================================
    事件卡 HTML（水彩紙卡）
 ===================================================================== */
-function cardShell(c, inner, quote){
+function cardShell(c, inner, quote, aside){
+  /* aside＝掛在標題右邊的東西（目前只有第 12 月抽銀根的轉盤）。
+     刻意不是「往下多疊一塊」，理由寫在 .ehero 的 CSS 註解裡。 */
+  const head = aside
+    ? `<div class="ehero">
+         <div class="eheroTxt"><h2>${c.title}</h2><p class="flavor">${c.flavor}</p></div>
+         <div class="eheroAside">${aside}</div>
+       </div>`
+    : `<h2>${c.title}</h2><p class="flavor">${c.flavor}</p>`;
   return `<div class="ecard">
     <div class="wash">${washSVG(c.wash||'#A9BB9B', .3)}</div>
     <span class="corner c1">✦</span><span class="corner c2">✦</span>
     <span class="corner c3">✦</span><span class="corner c4">✦</span>
     <div class="ehead"><span class="epill">${c.tag}</span><span class="emonth num">第 ${Math.min(S.round,S.cfg.rounds)} 月</span></div>
-    <h2>${c.title}</h2>
-    <p class="flavor">${c.flavor}</p>
+    ${head}
     <div class="ebody">${inner}</div>
     <div class="quote">${quote}</div>
   </div>`;
@@ -2113,10 +2142,35 @@ function knowledgeHTML(r){
     <button class="bigbtn gold" style="font-size:17px;padding:13px 32px" onclick="closeOverlay();setTimeout(openAccounts,80)">📖 開啟六帳戶介紹（正式教學）</button>
   </div>`;
 }
+/* 開牌那張卡要自己播「喀喀喀→結果」，所以跟 openSettle 一樣獨立成一個函式 */
+function openPayoff(){
+  openOverlay(payoffHTML(), true);
+  play('flip');
+  let t=60, gap=95;
+  for(let i=0;i<40 && t<2560; i++){ setTimeout(play.bind(null,'tick'), t); t+=gap; gap*=1.105; }
+  setTimeout(play.bind(null, S.payoffHit?'boom':'good'), 2700);
+}
 function payoffHTML(){
   const cfg=S.cfg;
-  const c=fixShell('固定事件・第 '+cfg.payoffMonth+' 月月初','銀行要求全數還款',
-    '銀行抽銀根了：你名下所有的欠款，這個月一次結清。有多少還多少，還不出來的，就這樣進結算。','#C96A5B');
+  const hit=!!S.payoffHit;
+  const eyebrow='固定事件・第 '+cfg.payoffMonth+' 月月初';
+  const wheel=payoffWheel(hit);
+  if(!hit){
+    const c=fixShell(eyebrow,'銀行沒有抽銀根',
+      '轉盤停在「平安」。這一次，銀行沒有來敲門——你名下的欠款和利息，原封不動跟著你進結算。','#93AC87');
+    return cardShell(c, branches(
+      '欠款早就還完了',[
+        '這一轉對你<b class="hl">沒有任何差別</b>',
+        '你本來就不需要靠運氣過這一關',
+        '現金流乾淨，結算的時候看得出來'],
+      '還欠著錢',[
+        '這次<b class="hl">躲過了</b>，帳戶裡的錢留著',
+        '但<b class="hl">欠款一毛沒少、利息照算</b>——這個月還是要付',
+        '那 1/4 一直都在，你只是<b class="hl">還沒輪到</b>'])
+    , '這次沒抽中，不代表你安全，只代表還沒輪到你。', wheel);
+  }
+  const c=fixShell(eyebrow,'銀行要求全數還款',
+    '轉盤停在「全數還款」。銀行抽銀根了：你名下所有的欠款，這個月一次結清。有多少還多少，還不出來的，就這樣進結算。','#C96A5B');
   return cardShell(c, branches(
     '一路把負債控制住',[
       '欠款不多，或早就還完了',
@@ -2126,7 +2180,7 @@ function payoffHTML(){
       `依序從<b class="hl">現金 → 生活 → 投資 → 學習 → 儲蓄 → 娛樂 → 第六格</b>扣，扣到還完為止`,
       '<b class="hl">帳戶可能被清空</b>——你以為手上有錢，其實那些錢是別人的',
       '還不完的部分<b class="hl">留著進結算</b>，繼續壓著你的淨資產'])
-  , '借來的錢從來不是你的錢，只是你還沒還的帳。');
+  , '借來的錢從來不是你的錢，只是你還沒還的帳。', wheel);
 }
 function joblessHTML(){
   const cfg=S.cfg;
@@ -2247,30 +2301,35 @@ function unlockBudget(useLearn){
    指針在正上方（0°），第 i 格的中心角是 (i+0.5)×每格角度，
    所以轉盤要轉到 360−中心角 才會讓那一格停在指針底下；前面多轉 4 圈純粹是為了好看。 */
 function pctTxt(v){ const n=Math.round(v*100); return (n>0?'+':n<0?'−':'')+Math.abs(n)+'%'; }
-function wheelHTML(c, gm){
-  const gms=(c.gms&&c.gms.length)?c.gms:[gm];
-  if(gms.length<2) return '';
-  const n=gms.length, seg=360/n;
-  const idx=Math.max(0, gms.indexOf(gm));
+/* 通用轉盤。segs＝[{t:字, fill:底色, ink:字色}]，idx＝要停在第幾格。
+   開牌（四檔收益）與第 12 月抽銀根（1 格抽／3 格平安）共用這一支，
+   兩個轉盤的動畫、指針、字的方向才不會各做一套然後慢慢長歪。 */
+function spinWheel(segs, idx, size){
+  const n=segs.length;
+  if(n<2) return '';
+  const seg=360/n;
   const net=360 - (idx*seg+seg/2);   /* 轉盤停下來時，整個盤子被轉了幾度 */
   const deg=360*4 + net;
   const cx=110, cy=110, R=102;
-  const cols=['#E8C98F','#C9A24B','#DDBE6C','#B98F30'];
   let g='';
-  gms.forEach((v,i)=>{
+  segs.forEach((sg,i)=>{
     const a0=(i*seg-90)*Math.PI/180, a1=((i+1)*seg-90)*Math.PI/180;
-    const neg=v<0;
     g+=`<path d="M${cx},${cy} L${(cx+R*Math.cos(a0)).toFixed(1)},${(cy+R*Math.sin(a0)).toFixed(1)}`
       +` A${R},${R} 0 ${seg>180?1:0},1 ${(cx+R*Math.cos(a1)).toFixed(1)},${(cy+R*Math.sin(a1)).toFixed(1)} Z"`
-      +` fill="${neg?'#C96A5B':cols[i%cols.length]}" stroke="#FBF7EC" stroke-width="2.5"/>`;
+      +` fill="${sg.fill}" stroke="#FBF7EC" stroke-width="2.5"/>`;
     const am=((i+.5)*seg-90)*Math.PI/180, tr=R*.63;
     const px=(cx+tr*Math.cos(am)).toFixed(1), py=(cy+tr*Math.sin(am)).toFixed(1);
-    const tx=px, ty=(+py+8).toFixed(1);
-    /* 整個盤子最後會被轉 net 度，數字先反轉同樣角度（以自己那格的中心為軸），停下來時每一格的字都是正的 */
-    g+=`<text x="${tx}" y="${ty}" text-anchor="middle" transform="rotate(${(-net).toFixed(1)} ${px} ${py})"`
-      +` font-size="23" font-weight="900" fill="${neg?'#FBF7EC':'#4A3410'}">${pctTxt(v)}</text>`;
+    /* 整個盤子最後會被轉 net 度，字先反轉同樣角度（以自己那格的中心為軸），停下來時每一格的字都是正的 */
+    const rot=`transform="rotate(${(-net).toFixed(1)} ${px} ${py})"`;
+    const lines=String(sg.t).split('\n');
+    const fs=sg.size||23;
+    lines.forEach((ln,li)=>{
+      const ty=(+py + 8 + (li-(lines.length-1)/2)*(fs+2)).toFixed(1);
+      g+=`<text x="${px}" y="${ty}" text-anchor="middle" ${rot}`
+        +` font-size="${fs}" font-weight="900" fill="${sg.ink}">${ln}</text>`;
+    });
   });
-  return `<div class="wheelwrap">
+  return `<div class="wheelwrap"${size?` style="width:${size}"`:''}>
     <div class="wheel" style="--spin:${deg}deg"><svg viewBox="0 0 220 220" aria-hidden="true">
       <circle cx="110" cy="110" r="106" fill="#FBF7EC" stroke="#C9A24B" stroke-width="4"/>
       ${g}
@@ -2278,6 +2337,28 @@ function wheelHTML(c, gm){
     </svg></div>
     <div class="wptr">▼</div>
   </div>`;
+}
+function wheelHTML(c, gm){
+  const gms=(c.gms&&c.gms.length)?c.gms:[gm];
+  if(gms.length<2) return '';
+  const cols=['#E8C98F','#C9A24B','#DDBE6C','#B98F30'];
+  const segs=gms.map((v,i)=>({ t:pctTxt(v),
+    fill: v<0 ? '#C96A5B' : cols[i%cols.length],
+    ink:  v<0 ? '#FBF7EC' : '#4A3410' }));
+  return spinWheel(segs, Math.max(0, gms.indexOf(gm)));
+}
+/* 第 12 月抽銀根的轉盤：四格，其中第 1 格（右上）是「全數還款」，其餘三格平安。
+   命中時一定停在那一格；沒命中時在三格平安裡隨機挑一格停，
+   不然每次都停在同一格，第二輪的學員一眼就看出來了。 */
+const PAYOFF_SEGS=[
+  { t:'平 安', fill:'#93AC87', ink:'#FBF7EC', size:21 },
+  { t:'全數\n還款', fill:'#C96A5B', ink:'#FBF7EC', size:21 },
+  { t:'平 安', fill:'#93AC87', ink:'#FBF7EC', size:21 },
+  { t:'平 安', fill:'#93AC87', ink:'#FBF7EC', size:21 }
+];
+function payoffWheel(hit){
+  const calm=[0,2,3];
+  return spinWheel(PAYOFF_SEGS, hit ? 1 : calm[Math.floor(Math.random()*calm.length)]);
 }
 /* 開牌卡要自己播「喀喀喀→號角」，所以獨立成一個函式，不要在佇列裡直接 openOverlay */
 function openSettle(p){
@@ -3083,7 +3164,11 @@ function renderSide(){
     [cfg.mindlessMonth]:'🌙 <b>本月月底</b>：無意識消費檢查——預算帳戶數 <2 者，從此每月底現金＋生活歸零！',
     [cfg.stressMonth]:`🌡 <b>本月月底</b>：壓力事件——報復性消費 ${fm(cfg.stressCost)}，娛樂每 ${fm(cfg.funPer)} 抵 ${fm(cfg.funCover)}！`,
     [cfg.knowMonth]:`★ <b>本月月初</b>：知識變現——學習帳戶每 ${fm(cfg.knowUnit)} 以 1:1 轉為每月主動收入（不足一單位捨去）；停薪期間跟薪水一起停，復工才開始領！`,
-    [cfg.payoffMonth]:'🏦 <b>本月月初</b>：銀行要求全數還款——名下欠款一次結清，有多少還多少，還不出來的直接進結算！',
+    [cfg.payoffMonth]: S.payoffHit===null
+      ? '🏦 <b>本月月初</b>：轉盤決定銀行抽不抽銀根——四格裡有一格是「全數還款」。'
+      : S.payoffHit
+        ? '🏦 <b>本月月初</b>：轉盤抽中了！名下欠款一次結清，有多少還多少，還不出來的直接進結算！'
+        : '🏦 <b>本月月初</b>：轉盤停在「平安」，這個月沒有抽銀根——欠款與利息原封不動進結算。',
     [cfg.charityMonth]:`💝 <b>本月月底</b>：公益勸募——每 1,000 為單位自由捐贈；從貢獻帳戶捐算 ${cfg.giveBoost} 倍捐款額`,
     [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——捐款額每 1,000 保留 ${fm(cfg.charityCover)} 支出！`,
     [cfg.joblessMonth-1]:`💼 <b>本月月底</b>：失業／公司倒閉——第 ${cfg.joblessMonth}、${cfg.joblessMonth+cfg.joblessLen-1} 月停薪（儲蓄每付 ${fm(cfg.joblessSaveUnit)} 抵 ${fm(cfg.joblessSaveCover)} 生活費）`,

@@ -1155,7 +1155,14 @@ function phFixed(X,r,f,fx,nm){
       for(let i=0;i<MAXSTU;i++) det.push({});
       break;
     case 'payoff':
-      /* 銀行抽銀根：欠多少還多少，不強制變賣投資、也不再借新債；還不完的留著進結算 */
+      /* 銀行抽銀根：欠多少還多少，不強制變賣投資、也不再借新債；還不完的留著進結算。
+         第 12 月月初先轉一個四格轉盤，1/4 抽、3/4 平安；停在平安就整關不動。
+         ⚠ 只認「明確的 false」：舊帳本沒有 payoffHit 這個欄位（undefined），
+           那是改版前的資料，要照舊規則一定收，不能因為欄位不存在就當成沒抽中。 */
+      if(nm.payoffHit===false){
+        for(let i=0;i<MAXSTU;i++) det.push({amt:0, owe:0, calm:true, srcs:[], used:[], borrowed:0, short:0});
+        break;
+      }
       for(let i=0;i<MAXSTU;i++){
         const owe=X.loan[i]+X.debt[i];
         if(owe<=0){ det.push({amt:0, owe:0, used:[], borrowed:0, short:0}); continue; }
@@ -1428,6 +1435,11 @@ function fixedStep(f,r){
       return Object.assign(base,{ mode:'info',
         why:'手上永遠留著緊急備用金，是你對抗無常的底氣。' });
     case 'payoff': {
+      if(nm.payoffHit===false)
+        return Object.assign(base,{ mode:'info', title:'銀行沒有抽銀根',
+          note:'轉盤停在「平安」——這個月銀行沒有來收錢。'
+              +'欠款和利息<b>一毛都沒有變</b>，原封不動帶進結算。這一關不用動任何錢。',
+          why:'這次沒抽中，不代表你安全，只代表還沒輪到你。' });
       const stp=Object.assign(base,{ mode:'take', money:null,
         title:'銀行要求全數還款',
         note:'格子上的大字＝這一位<b>實際要交出來的錢</b>（不是他欠的總額），照著收就好。'
