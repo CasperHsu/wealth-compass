@@ -161,13 +161,20 @@ body.ready.disconnected #app{padding-top:118px}
 .tick{position:absolute;top:9px;right:10px;font-size:22px;color:var(--green);font-weight:800;display:none}
 .stu.done .tick{display:block}
 .stu.forced .tick{display:block;color:var(--brick)}
-/* 買不起這一張投資時，格子下面那一行「可以跟銀行借」的提示。
-   刻意做成一行小字而不是按鈕——借款仍然是要學員自己開口的事，
-   只是在手機上總得看得到入口在哪。 */
-.lend{margin-top:9px;padding:8px 10px;border-radius:9px;position:relative;z-index:2;
-  background:var(--gold-50,#FBF4E4);border:1.5px dashed var(--gold);
-  color:var(--gold-deep);font-size:13px;font-weight:700;line-height:1.5;cursor:pointer}
+/* 買不起這一張投資時，格子下面那個「跟銀行借錢」的入口。
+   ⚠ 原本刻意做成一行虛線小字（借款是要學員自己開口的事）。
+     2026-09-19 試玩回饋：學員在手機上根本沒看到，回報「貸款功能無法執行」。
+     觸發條件不變（還是只有買不起才出現，那條教學設計保留），
+     但外觀改成一顆真的像按鈕的東西，並且直接寫出還差多少。 */
+.lend{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;
+  margin-top:10px;padding:12px 14px;border-radius:11px;position:relative;z-index:2;
+  background:var(--gold-50,#FBF4E4);border:2px solid var(--gold);
+  color:var(--gold-deep);cursor:pointer}
+.lend b{font-size:17px;font-weight:800;line-height:1.3}
+.lend small{font-size:13px;font-weight:700;opacity:.85;line-height:1.4}
 .lend:active{transform:scale(.985);filter:brightness(.97)}
+/* 現金流是負的＝銀行不借。還是給入口，但先講清楚是借不到，別讓他白點。 */
+.lend.off{background:var(--brick-50);border-color:var(--brick);color:var(--brick-900)}
 .mini{display:flex;gap:6px;z-index:2;margin-top:9px;justify-content:flex-end;flex-wrap:wrap}
 .mini button{height:34px;min-width:38px;padding:0 10px;border-radius:9px;border:1.5px solid var(--line-2);
   background:#fff;font-size:14px;font-weight:700;color:var(--ink-soft)}
@@ -180,6 +187,19 @@ body.ready.disconnected #app{padding-top:118px}
   background:#fff;font-size:13px;font-weight:700;color:var(--ink-soft)}
 .apick button.on{border-color:var(--gold);background:var(--gold-50);color:var(--gold-deep)}
 .apick.narrow{padding-right:0}
+/* 額外收入（年終獎金、投資開牌收益）的「這筆放進哪一格」。
+   ⚠ 這一區刻意做大。原本跟上面那個 .apick 一樣是一行小字，
+     加上卡片文案又寫「照你的比例分到帳戶」，學員會以為是自動的、
+     根本不會去點——2026-09-19 試玩回饋以為這個功能沒做。
+     現在是一塊金框、一句問句、六顆大按鈕，擺明了在等他選。 */
+.apick.big{display:block;margin-top:12px;padding:12px 12px 11px;border-radius:12px;
+  background:var(--gold-50,#FBF4E4);border:2px solid var(--gold)}
+.apick.big .al{display:block;margin:0 0 10px;white-space:normal;line-height:1.45;
+  font-size:15px;font-weight:800;color:var(--gold-deep)}
+.apick.big .ab{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.apick.big button{height:54px;width:100%;min-width:0;padding:0 4px;border-radius:10px;
+  border:2px solid var(--line-2);background:#fff;font-size:16px;font-weight:800;color:var(--ink-soft)}
+.apick.big button.on{border-color:var(--gold-deep);background:var(--gold-deep);color:#fff}
 
 /* 底部固定操作列 */
 #bar{position:fixed;left:0;right:0;bottom:0;z-index:40;height:88px;display:flex;align-items:center;
@@ -1599,7 +1619,9 @@ function cardStep(c,r){
   /* 好消息：發錢，會照他的分配比例自動分流 */
   if(c.amt>0){
     return { id:'card_'+c.id, mode:'give', badge:'發錢', title:c.title, money:c.amt,
-      note:'跟銀行領 '+fm(c.amt)+'。下面會告訴你這筆錢照你的比例要分到哪幾個帳戶。',
+      /* ⚠ 原文寫「照你的比例分到哪幾個帳戶」是錯的：這筆錢是整筆進「一個」帳戶，
+         而且由學員自己選。寫錯會讓他以為是自動的，就不會去點下面那一區。 */
+      note:'跟銀行領 '+fm(c.amt)+'。這筆錢要整筆放進哪一個帳戶，由你自己決定——下面選一格。',
       why:'意外之財最容易蒸發——這筆錢要進哪個帳戶，才是真正的考驗。',
       amountOf:()=>c.amt };
   }
@@ -1766,14 +1788,15 @@ function acctFor(m,i,r,dflt){
 /* 「這筆錢放進哪一格」的小列。只有真的有錢要落地時才出現，
    預設那一格先亮著——學員沒特別說，一下都不用點，節奏不會被拖慢。
    onlyAlloc＝額外收入用，只列他有設定比例的帳戶。 */
-function acctPick(st,i,dflt,label,narrow,onlyAlloc){
+function acctPick(st,i,dflt,label,narrow,onlyAlloc,big){
   const r=curRound();
   const list=onlyAlloc?allowedAccs(i,r):ACCS;
   const cur=onlyAlloc?acctFor(markOf(st),i,r,dflt):acctOf(markOf(st),i,dflt);
+  const btns=list.map(k=>`<button class="${k===cur?'on':''}" onclick="event.stopPropagation();setAcct(${i},'${k}')">${aName(k,i,r)}</button>`).join('');
+  /* big＝額外收入用的大版面（金框＋問句＋六顆大按鈕），見 .apick.big 的註解 */
+  if(big) return `<div class="apick big"><span class="al">${label}</span><div class="ab">${btns}</div></div>`;
   /* narrow＝這一格右下角還有「−／借」小按鈕，要留位置給它們，不然會壓到 */
-  return `<div class="apick${narrow?' narrow':''}"><span class="al">${label}</span>`
-    + list.map(k=>`<button class="${k===cur?'on':''}" onclick="event.stopPropagation();setAcct(${i},'${k}')">${aName(k,i,r)}</button>`).join('')
-    + `</div>`;
+  return `<div class="apick${narrow?' narrow':''}"><span class="al">${label}</span>${btns}</div>`;
 }
 function setAcct(i,k){
   const st=STEPS[CS.cur.i]; if(!st) return;
@@ -1885,10 +1908,12 @@ function renderGrid(st){
       sub = st.subOf? st.subOf(i) : '';
       if(!sub && D && D.parts && D.parts.length)
         sub = '會分成 '+D.parts.map(p=>aName(p.k,i,r)+' '+fm(p.a)).join('、')+(D.rest>0?('、現金 '+fm(D.rest)):'');
-      /* 額外收入（開牌收益、好事卡）：學員自己決定進哪一格，但只列他有設定比例的帳戶 */
-      if(st.id.indexOf('st_')===0 && amt>0) pick=acctPick(st,i,'invest','這筆放進',false,true);
+      /* 額外收入（開牌收益、好事卡）：學員自己決定進哪一格，但只列他有設定比例的帳戶。
+         標籤寫成問句＋把金額念出來，學員才知道這裡真的在等他做決定。 */
+      if(st.id.indexOf('st_')===0 && amt>0)
+        pick=acctPick(st,i,'invest',`這 ${fm(amt)} 要放進哪一格？`,false,true,true);
       if(st.id.indexOf('card_')===0 && amt>0 && allocSum(allocOf(i,curRound()))>0)
-        pick=acctPick(st,i,'save','這筆放進',false,true);
+        pick=acctPick(st,i,'save',`這 ${fm(amt)} 要放進哪一格？`,false,true,true);
       if(m.tick[i]) cls.push('done');
     }
     else if(st.mode==='take'){
@@ -1946,10 +1971,16 @@ function renderGrid(st){
       if(u) sub = `應收 ${fm(Math.max(0,need-lo))}`+(lo?`　（借款 ${fm(lo)}）`:'');
       else sub = cap>0 ? (st.one?`投資帳戶 ${fm(avail)}　點一下＝投 ${fm(st.price)}`:`投資帳戶 ${fm(avail)}　最多 ${cap} 單位`)
                        : `投資帳戶 ${fm(avail)}，買不起`;
-      /* 借款仍然不做成主畫面上的按鈕（「可以跟銀行借」是要學員自己想到的事），
-         但買不起的時候給一行提示——不然在手機上根本找不到那個入口。 */
-      if(!u && cap<=0 && slotOf(i,r,'invest'))
-        mini2=`<div class="lend" onclick="event.stopPropagation();openDrawer('stu',${i})">💰 錢不夠？點「明細」可以跟銀行借</div>`;
+      /* 借款只在「買不起」的時候才冒出來（這條教學設計保留：要自己想到去借）。
+         但入口本身要看得見、而且要先講清楚借不借得到，不然學員會點了沒反應就放棄。 */
+      if(!u && cap<=0 && slotOf(i,r,'invest')){
+        const lcap=loanCapOf(i), gap=Math.max(0, st.price-avail-(lo||0));
+        mini2 = lcap>0
+          ? `<button class="lend" onclick="event.stopPropagation();openDrawer('stu',${i})">
+               <b>💰 跟銀行借錢</b><small>還差 ${fm(gap)}　點這裡去借</small></button>`
+          : `<button class="lend off" onclick="event.stopPropagation();openDrawer('stu',${i})">
+               <b>🚫 銀行不借你</b><small>你每月淨現金流 ${fm(flowOf(i))}　點這裡看原因</small></button>`;
+      }
       const spare=Math.max(0, lo-u*st.price);
       if(spare>0){ sub += `　多借 ${fm(spare)}`; pick=acctPick(st,i,'invest','多借的放進',true); }
       /* 借款刻意不放在這一層：「可以跟銀行借」是要學員自己想到的事，
@@ -2401,6 +2432,11 @@ function loanSection(i){
   const cap=loanCapOf(i);
   const otherMonths=Math.max(0, ((E&&E.loan[i])||0) - Math.min(got, u*st.price));
   const blocked = cap<=0 || (otherMonths+got+loanUnit() > cap);
+  /* 「一次借足」要借到多少：剛好湊得出一個單位，同時不超過這張投資的金額、也不超過借款上限。
+     ⚠ 沒有這顆按鈕的話，10 萬的天使輪要按 9 下、20 萬的老屋要按 19 下「再借 10,000」，
+       學員在手機上按兩下就以為壞了（2026-09-19 試玩回報「貸款無法執行」有一半是這個）。 */
+  const fill=loanFillTo(i);
+  const canFill = short>0 && fill>got+loanUnit();
   return `<div class="dsec">跟 銀 行 借 錢</div>
     <div style="font-size:13px;line-height:1.7;color:var(--ink-soft);padding:2px 2px 8px">
       這一張「${st.title}」${st.one?'一筆':'每單位'} <b>${fm(st.price)}</b>，你的投資帳戶有 <b>${fm(avail)}</b>。
@@ -2415,15 +2451,41 @@ function loanSection(i){
         ${cap<=0
           ? '你現在的<b>每月淨現金流是 '+fm(flowOf(i))+'</b>，銀行不會借錢給一個每個月都在虧的人——先把現金流做正，才有借力的資格。'
           : '你已經借到上限了（'+fm(cap)+'）。要再借更多，得先把每個月的淨現金流做大。'}</div>`:''}
+    ${canFill?`<button class="dbtn" style="width:100%;margin:8px 0 0;border-color:var(--gold-deep);
+        background:var(--gold-deep);color:#fff;font-weight:800"
+        onclick="borrowFill(${i})">一次借 ${fm(fill-got)}　剛好買得起</button>`:''}
     <div style="display:flex;gap:8px;margin:8px 0 4px">
-      <button class="dbtn" style="flex:1;margin:0;border-color:var(--gold);color:var(--gold-deep)"
-        ${blocked?'disabled style="flex:1;margin:0;opacity:.4"':''}
+      <button class="dbtn" style="flex:1;margin:0;border-color:var(--gold);color:var(--gold-deep)${blocked?';opacity:.35':''}"
+        ${blocked?'disabled':''}
         onclick="borrowMore(${i})">再借 ${fm(loanUnit())}</button>
       ${got?`<button class="dbtn" style="flex:none;width:110px;margin:0" onclick="clearLoan(${i})">不借了</button>`:''}
     </div>
     ${u?'':`<div style="font-size:12px;color:var(--ink-mute);padding:2px">借夠了之後，關掉這個視窗，回上一頁點「投入」。</div>`}`;
 }
 function borrowMore(i){ bumpLoan(i); play('coin'); const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i); }
+/* 一次借到「剛好買得起一個單位」的金額。三個天花板同時要守，跟 bumpLoan 的規則一模一樣：
+     ①這張投資的金額（借來的錢只能用在這一張上）
+     ②借款總額上限＝月淨現金流 ×10
+     ③只借到湊得出一個單位為止，不多借
+   回傳的是「借完之後的總額」，不是這次要加多少。 */
+function loanFillTo(i){
+  const st=STEPS[CS.cur.i]; if(!st||st.mode!=='units') return 0;
+  const m=markOf(st), D=detOf(st,i), U=loanUnit();
+  const avail=D?(D.avail||0):0, got=m.loan[i]||0, u=m.cnt[i]||0;
+  const short=Math.max(0, st.price-(avail+got));
+  if(short<=0) return got;
+  const room = st.one ? st.price : (u*st.price + st.price);
+  const otherMonths=Math.max(0, ((E&&E.loan[i])||0) - Math.min(got, u*st.price));
+  const maxByCap = Math.max(0, loanCapOf(i) - otherMonths);
+  return Math.min(room, maxByCap, got + Math.ceil(short/U)*U);
+}
+function borrowFill(i){
+  const st=STEPS[CS.cur.i]; if(!st||st.mode!=='units') return;
+  const m=markOf(st), got=m.loan[i]||0, want=loanFillTo(i);
+  if(want<=got){ toast('已經借到上限了，沒辦法再借。'); return; }
+  m.loan[i]=want; play('coin'); saveCS(); render();
+  const p=$('#dPanel'); if(p) p.innerHTML=stuPanel(i);
+}
 function clearLoan(i){
   const st=STEPS[CS.cur.i]; if(!st || st.mode!=='units') return;
   markOf(st).loan[i]=0; saveCS(); render();
