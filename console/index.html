@@ -206,6 +206,8 @@ body.ready.disconnected #app{padding-top:118px}
   background:#fff;font-size:21px;font-weight:800;text-align:center;color:var(--ink);
   font-variant-numeric:tabular-nums;-moz-appearance:textfield}
 .alrow .ain:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(74,124,89,.16)}
+/* 還沒命名 → 打不進去。要一眼看得出來是「現在不能用」，不是壞掉 */
+.alrow .ain:disabled{background:var(--line-2,#EAE6DA);border-style:dashed;opacity:.55;cursor:not-allowed}
 .alrow .ain::-webkit-outer-spin-button,
 .alrow .ain::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .alrow .pc{flex:none;font-size:15px;font-weight:700;color:var(--ink-soft)}
@@ -597,7 +599,7 @@ const N=()=>CS.n;
 function defNums(){
   return { stressCost:30000, marryExtra:5000, inflationExtra:5000, knowUnit:10000,
            joblessSaveUnit:500, joblessSaveCover:5000, charityUnit:1000, giveBoost:10,
-           charityCover:50000, accidentCost:300000, unlockFee:2000, unlockFeeLearn:500 };
+           charityCover:5000, accidentCost:300000, unlockFee:2000, unlockFeeLearn:500 };
 }
 function nums(){
   return Object.assign(defNums(), (ST&&ST.nums)||{});
@@ -1230,7 +1232,20 @@ function buildSteps(){
          發錢時就能直接照帳戶把籌碼一次發對，不用發完再退回來重擺。
          主控台沒有獨立的「分配」階段，錢一律在講師推進到下一階段時才真正入帳。 */
       /* 月初事件（第 7 月知識變現）要先做完，這個月該發多少主動收入才算得出來 */
-      (ST.fixed||[]).filter(f=>f.when==='pre').forEach(f=>out.push(fixedStep(f,r)));
+      /* ⚠ 月初事件還沒翻牌時，整個月不給步驟，只給一張「等一下」。
+         2026-09-19 現場回報：第 7 月（知識變現）與第 12 月（抽銀根）講師畫面先出事件、
+         學員端卻先發薪。原因是防劇透機制讓「還沒翻出來」的事件不廣播，
+         這一版步驟表就少了那一步，學員先走完發薪，事件才補進來。
+         back.sched 本來就帶著 12 個月每個事件的 id 與 when（只有代號、沒有內容），
+         拿它來判斷「這個月排定有幾個月初事件」不會劇透。 */
+      const pre=(ST.fixed||[]).filter(f=>f.when==='pre');
+      const bk=(ST&&ST.back)||CS.back||{};
+      const preSched=(((bk.sched||{})[r])||[]).filter(x=>x.when==='pre');
+      if(preSched.length>pre.length) return [{ id:'waitpre', mode:'info', badge:'等一下',
+        title:'等講師翻開這個月月初的事件',
+        note:'這個月一開始就有一件事要先處理。講師翻開之後，這裡才會往下走——先不要動。',
+        why:'月初事件會影響這個月你領得到多少、要先還多少。順序顛倒了，帳就對不起來。' }];
+      pre.forEach(f=>out.push(fixedStep(f,r)));
       out.push(allocStep(r));
       out.push(salaryStep(r));
       (ST.settle||[]).forEach(s=>out.push(settleStep(s,r)));
@@ -1938,10 +1953,11 @@ function allocPanel(i){
           oninput="setAccName(${i},'${k}',this.value)" onblur="render()"
           style="width:76px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
                  border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">
-        <small id="atag-${k}" style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
+        <small id="atag-${k}" style="display:block;font-size:11px;margin-left:18px;${
+          (namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()?'color:var(--ink-mute)':'color:var(--brick);font-weight:700'}">${
           (namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()
             ? ((function(){ const rm=roleMap(i,tr); for(const rr in rm){ if(rm[rr]===k) return '算 '+ROLE_NAME[rr]; } return '一般帳戶'; })())
-            : ''}</small></span>
+            : '先取名字'}</small></span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
         ${(namesAt(i,tr)[ACCS.indexOf(k)]||'').trim()?'':'disabled title="先取名字"'}
@@ -1966,6 +1982,7 @@ function allocPanel(i){
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>${nameOf(i)}　的分配比例</h3>
     <div class="ahint">
+      <b style="color:var(--brick)">每一格要先取名字，右邊的 % 才打得進去。</b><br>
       把他自己說的數字直接打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是他的選擇。<br>
       ${tr>1?`這次設定<b>從第 ${tr} 月開始生效</b>。`:'第 1 月起生效，之後每個月都照這個比例。'}</div>
     <div class="alloc">${rows}
@@ -1991,7 +2008,10 @@ function paintNames(i){
     if(el){ el.disabled=!named; if(!named) el.value=''; el.title=named?'':'先取名字'; }
     const tag=$('#atag-'+k);
     if(tag){ let role=''; for(const rr in rm){ if(rm[rr]===k) role=ROLE_NAME[rr]; }
-             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : ''; }
+             /* 沒命名時要「看得見」為什麼右邊打不進去——原本只有 title tooltip，手機上根本沒有 */
+             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : '先取名字';
+             tag.style.color = named ? 'var(--ink-mute)' : 'var(--brick)';
+             tag.style.fontWeight = named ? '' : '700'; }
   });
   paintAlloc(i);
 }

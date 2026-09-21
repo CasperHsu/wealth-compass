@@ -121,6 +121,15 @@ body.ready.disconnected #app{padding-top:118px}
   display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:13px;color:var(--ink-soft)}
 #mybal .sum b{font-size:17px;font-weight:800;color:var(--green-900);font-variant-numeric:tabular-nums}
 #mybal .sum b.neg{color:var(--brick)}
+/* 還款放在常駐帳戶列裡（2026-09-19）：本來只藏在「明細」抽屜，學員找不到。
+   只有真的欠著投資貸款才出現，沒借的人畫面不會多一塊。 */
+#mybal .brepay{margin-top:8px;padding-top:9px;border-top:1px dashed var(--line);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#mybal .brepay .rl{flex:1;min-width:120px;font-size:13px;color:var(--ink-soft);line-height:1.45}
+#mybal .brepay .rl b{color:var(--gold-deep);font-weight:800}
+#mybal .brepay button{height:44px;padding:0 14px;border-radius:10px;border:2px solid var(--gold);
+  background:#fff;color:var(--gold-deep);font-size:15px;font-weight:800}
+#mybal .brepay button.all{border-color:var(--gold-deep);background:var(--gold-deep);color:#fff}
 @media (max-width:560px){
   #mybal .bgrid{grid-template-columns:repeat(3,1fr)}
   #mybal .b .v{font-size:17px}
@@ -299,6 +308,8 @@ button:active{transform:scale(.95);filter:brightness(.93)}
   background:#fff;font-size:21px;font-weight:800;text-align:center;color:var(--ink);
   font-variant-numeric:tabular-nums;-moz-appearance:textfield}
 .alrow .ain:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(74,124,89,.16)}
+/* 還沒命名 → 打不進去。要一眼看得出來是「現在不能用」，不是壞掉 */
+.alrow .ain:disabled{background:var(--line-2,#EAE6DA);border-style:dashed;opacity:.55;cursor:not-allowed}
 .alrow .ain::-webkit-outer-spin-button,
 .alrow .ain::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .alrow .pc{flex:none;font-size:15px;font-weight:700;color:var(--ink-soft)}
@@ -810,7 +821,7 @@ const N=()=>CS.n;
 function defNums(){
   return { stressCost:30000, marryExtra:5000, inflationExtra:5000, knowUnit:10000,
            joblessSaveUnit:500, joblessSaveCover:5000, charityUnit:1000, giveBoost:10,
-           charityCover:50000, accidentCost:300000, unlockFee:2000, unlockFeeLearn:500 };
+           charityCover:5000, accidentCost:300000, unlockFee:2000, unlockFeeLearn:500 };
 }
 function nums(){
   return Object.assign(defNums(), (ST&&ST.nums)||{});
@@ -1482,7 +1493,20 @@ function buildSteps(){
          發錢時就能直接照帳戶把籌碼一次發對，不用發完再退回來重擺。
          主控台沒有獨立的「分配」階段，錢一律在講師推進到下一階段時才真正入帳。 */
       /* 月初事件（第 7 月知識變現）要先做完，這個月該發多少主動收入才算得出來 */
-      (ST.fixed||[]).filter(f=>f.when==='pre').forEach(f=>out.push(fixedStep(f,r)));
+      /* ⚠ 月初事件還沒翻牌時，整個月不給步驟，只給一張「等一下」。
+         2026-09-19 現場回報：第 7 月（知識變現）與第 12 月（抽銀根）講師畫面先出事件、
+         學員端卻先發薪。原因是防劇透機制讓「還沒翻出來」的事件不廣播，
+         這一版步驟表就少了那一步，學員先走完發薪，事件才補進來。
+         back.sched 本來就帶著 12 個月每個事件的 id 與 when（只有代號、沒有內容），
+         拿它來判斷「這個月排定有幾個月初事件」不會劇透。 */
+      const pre=(ST.fixed||[]).filter(f=>f.when==='pre');
+      const bk=(ST&&ST.back)||CS.back||{};
+      const preSched=(((bk.sched||{})[r])||[]).filter(x=>x.when==='pre');
+      if(preSched.length>pre.length) return [{ id:'waitpre', mode:'info', badge:'等一下',
+        title:'等講師翻開這個月月初的事件',
+        note:'這個月一開始就有一件事要先處理。講師翻開之後，這裡才會往下走——先不要動。',
+        why:'月初事件會影響這個月你領得到多少、要先還多少。順序顛倒了，帳就對不起來。' }];
+      pre.forEach(f=>out.push(fixedStep(f,r)));
       out.push(allocStep(r));
       out.push(salaryStep(r));
       (ST.settle||[]).forEach(s=>out.push(settleStep(s,r)));
@@ -1724,7 +1748,9 @@ function fixedStep(f,r){
     case 'accident':
       return Object.assign(base,{ mode:'take', money:nm.accidentCost,
         note:'下面已經把你以前的捐款額換算成「貴人相助保留多少」了，照那個金額付。'
-            +'捐款額每 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)+'；捐得夠多的人完全不用付。',
+            +'捐款額每 '+fm(nm.charityUnit)+' 保留 '+fm(nm.charityCover)
+            +'；要全額保住 '+fm(nm.accidentCost)+' 需要捐款額 '
+            +fm(Math.ceil(nm.accidentCost/nm.charityCover)*nm.charityUnit)+'。',
         why:'你平時種下的善意，會在最壞的時刻回來接住你。' });
     case 'realloc':
       return Object.assign(base,{ mode:'alloc', allocFor:r+1, badge:'重分配',
@@ -2080,7 +2106,12 @@ function renderBal(){
       <span>每月淨現金流 <b class="${flow<0?'neg':''}" data-bk="flow">${fm(flow)}</b></span>
       ${pas?`<span>被動收入 <b>${fm(pas)}</b>/月</span>`:''}
       ${oth?`<span>其他收入 <b>${fm(oth)}</b>/月</span>`:''}
-    </div>`);
+    </div>
+    ${E.loan[0]>0?`<div class="brepay">
+      <span class="rl">投資貸款 <b>${fm(E.loan[0])}</b>　利息每月 ${fm(interestOf(0))}</span>
+      <button onclick="doRepay(0)">還 ${fm(Math.min(loanUnit(),E.loan[0]))}</button>
+      ${E.loan[0]>loanUnit()?`<button class="all" onclick="repayAll(0)">全部還清</button>`:''}
+    </div>`:''}`);
 
   const prev=lastBal; lastBal=cur;
   const skip=noAnim; noAnim=false;
@@ -2310,8 +2341,9 @@ function allocPanel(i){
           oninput="setAccName(${i},'${k}',this.value)" onblur="render()"
           style="width:76px;font-size:15px;font-weight:700;color:var(--green-900);border:none;
                  border-bottom:1.5px dashed var(--sage-soft);background:transparent;padding:2px 0">
-        <small id="atag-${k}" style="display:block;font-size:11px;color:var(--ink-mute);margin-left:18px">${
-          (ns[si]||'').trim() ? (roleTag(k)?'算 '+roleTag(k):'一般帳戶') : ''}</small></span>
+        <small id="atag-${k}" style="display:block;font-size:11px;margin-left:18px;${
+          (ns[si]||'').trim()?'color:var(--ink-mute)':'color:var(--brick);font-weight:700'}">${
+          (ns[si]||'').trim() ? (roleTag(k)?'算 '+roleTag(k):'一般帳戶') : '先取名字'}</small></span>
       <input class="ain" id="ain-${k}" type="number" inputmode="numeric" pattern="[0-9]*"
         min="0" max="100" value="${al[k]||''}" placeholder="0"
         ${(ns[si]||'').trim()?'':'disabled title="先取名字"'}
@@ -2335,6 +2367,7 @@ function allocPanel(i){
   return `<button class="dx" onclick="closeDrawer()">✕</button>
     <h3>我 的 分 配 比 例</h3>
     <div class="ahint">
+      <b style="color:var(--brick)">每一格要先取名字，右邊的 % 才打得進去。</b><br>
       把你想分的百分比打進去。<b>不分帳戶、只分兩三個，都可以</b>——那是你的選擇。<br>
       ${tr>1?`這次設定<b>從第 ${tr} 月開始生效</b>。`:'第 1 月起生效，之後每個月都照這個比例。'}</div>
     <div class="alloc">${rows}
@@ -2359,7 +2392,10 @@ function paintNames(i){
     if(el){ el.disabled=!named; if(!named) el.value=''; el.title=named?'':'先取名字'; }
     const tag=$('#atag-'+k);
     if(tag){ let role=''; for(const rr in rm){ if(rm[rr]===k) role=ROLE_NAME[rr]; }
-             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : ''; }
+             /* 沒命名時要「看得見」為什麼右邊打不進去——原本只有 title tooltip，手機上根本沒有 */
+             tag.textContent = named ? (role?'算 '+role:'一般帳戶') : '先取名字';
+             tag.style.color = named ? 'var(--ink-mute)' : 'var(--brick)';
+             tag.style.fontWeight = named ? '' : '700'; }
   });
   paintAlloc(i);
 }
@@ -2603,13 +2639,18 @@ function adjAcc(k,i,d){
   play('tick'); skipAnim();
   saveCS(); render(); openDrawer('stu',i);
 }
-function doRepay(i){
-  const r=Math.max(1,curRound());
-  const amt=Math.min(loanUnit(), E.loan[i]);
+function doRepay(i){ repayBy(i, Math.min(loanUnit(), E.loan[i])); }
+/* 一次還清。引擎那邊 payFrom 帶 borrow=false，帳戶不夠就只還得出來的部分
+   （會回傳 short，貸款只扣實際還掉的），所以不會因此多出被迫負債。 */
+function repayAll(i){ repayBy(i, E.loan[i]); }
+function repayBy(i, amt){
+  amt=Math.min(amt, E.loan[i]);
   if(amt<=0) return;
-  CS.repay.push({r,i,amt});
-  play('coin'); skipAnim();
-  saveCS(); render(); openDrawer('stu',i);
+  CS.repay.push({ r:Math.max(1,curRound()), i, amt });
+  play('coin'); skipAnim(); saveCS(); render();
+  /* 從主頁面按的時候不要硬把抽屜叫出來；抽屜開著才順手刷新它 */
+  const dr=$('#drawer');
+  if(dr && dr.classList.contains('open')) openDrawer('stu',i);
   toast(`還了 ${fm(amt)} 投資貸款`);
 }
 function setPanel(){

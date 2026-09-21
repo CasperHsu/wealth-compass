@@ -415,6 +415,19 @@ body.syncpanel-open #syncPanel{transform:translateX(0)}
 .ehero .wheelwrap{margin:0}
 .ebody{margin-bottom:24px}
 /* A/B 分支 */
+/* 帳戶換算表（2026-09-19 培峯要的）：事件講完後按下一步，獨立一頁。
+   ⚠ 刻意做成獨立一張卡，不是接在事件卡下面——卡片一變高，fitPanel 會被高度卡住，
+     整張在投影幕上反而縮小（上次加轉盤實測 1881→1286，左右白掉六百多像素）。 */
+.convt{width:100%;border-collapse:collapse;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.convt th{font-size:20px;font-weight:800;color:var(--ink-soft);padding:6px 14px;text-align:center;
+  border-bottom:2px solid var(--line)}
+.convt td{font-size:30px;font-weight:900;color:var(--green-900);padding:9px 14px;text-align:center;
+  border-bottom:1px solid var(--line)}
+.convt td.ar{font-size:22px;color:var(--ink-mute);font-weight:700;padding:9px 4px}
+.convt tr.full td{background:var(--gold-50,#FAF2DD);color:var(--gold-deep)}
+.convt td .ft{font-size:16px;font-weight:800;margin-left:8px;white-space:nowrap}
+.convfoot{margin-top:14px;font-size:19px;line-height:1.6;text-align:center;color:var(--ink-soft)}
+.convfoot b{color:var(--green-900)}
 .branches{display:flex;gap:16px;justify-content:center}
 .branch{
   flex:1;max-width:392px;border-radius:12px;padding:15px 20px 16px;
@@ -823,11 +836,19 @@ const DEF = {
   charityMonth:6, charityUnit:1000, giveBoost:10,    /* 公益：每 1,000 為單位；從貢獻帳戶捐 1,000 記 10,000 */
   knowMonth:7, knowUnit:10000,                       /* 知識變現：第 7 月「月初」；每 10,000 為單位（無條件捨去）；換到的是主動收入，停薪月不發、復工才開始領 */
   marryMonth:8,   marryExtra:5000,                   /* 結婚生子：第 8 月「付固定支出之前」漲，當月就付新金額 */
-  accidentMonth:9, accidentCost:300000, charityCover:50000, /* 重大事故 30 萬；每捐 1,000 保留 5 萬 */
+  accidentMonth:9, accidentCost:300000, charityCover:5000,  /* 重大事故 30 萬；每 1,000 捐款額保留 5,000 */
+  /* ⚠ charityCover 2026-09-19 從 50,000 降為 5,000（培峯裁示）。
+     舊值的後果：貢獻帳戶只要捐 1,000 → ×10 ＝ 捐款額 10,000 → 保留 500,000，
+     一口氣蓋過 30 萬，「捐一點點就全身而退」，公益那一課完全沒有梯度。
+     新值之下要全額保住 30 萬＝捐款額 60,000＝從貢獻帳戶捐 6,000（或用別的帳戶捐 60,000）。
+     下面所有文案一律改成從這三個數字現算，不要再寫死，免得日後調數字文案跟著錯。 */
   reallocA:4, reallocB:8, unlockFee:2000, unlockFeeLearn:500, /* 重分配：第 4、8 月；首次 2,000，用學習帳戶付只要 500 */
   payoffMonth:12,                                    /* 第 12 月「月初」：銀行要求全數還款，有多少還多少 */
   loanUnit:10000, loanRate:0.10, loanCapX:10,        /* 借款 1 萬為單位、月息 10%、上限＝每月淨現金流 10 倍 */
-  timeBudgetMin:90,
+  timeBudgetMin:90,          /* 舊欄位，只剩相容用；配速改由下面三個決定 */
+  /* 每一局的時間盒（2026-09-19 培峯定）：前 7 局各 5 分鐘、第 8 局起各 8 分鐘＝共 75 分鐘。
+     計時規則見 rtSync()：投影幕上有卡片＝講師在講解，那段不算在這一局的時間裡。 */
+  roundMinEarly:5, roundMinLate:8, roundLateFrom:8,
   mvUrl:''
 };
 const ACCS  = ['life','fun','save','invest','learn','give'];
@@ -971,7 +992,9 @@ function newState(){
     deck:buildDeck(cfg), recap:{}, pend:[], demo:newDemo(), muted:false, coop:false,
     expenseBonus:0, budgetUnlocked:false, mindlessOn:false, preFix:{}, shown:{},
     payoffHit:null,                    /* 第 12 月轉盤的結果：null＝還沒轉、true＝抽、false＝平安 */
-    timer:{accumMs:0, runningSince:null}};
+    timer:{accumMs:0, runningSince:null},
+    /* 每一局自己的鐘。r＝現在算的是第幾局、ms＝已累計、since＝目前這段從何時開始（null＝沒在走） */
+    rt:{r:0, ms:0, since:null}};
 }
 
 /* ---------- 牌組生成（v4：前中後期分池、後期指定月份） ---------- */
@@ -998,6 +1021,11 @@ function load(){
     const s=JSON.parse(localStorage.getItem(LSKEY));
     if(s && s.v===10){
       if(!s.timer) s.timer={accumMs:0, runningSince: s.started?Date.now():null};
+      /* since 是絕對時間戳，重新載入時一定要清掉，不然關了一小時再開會把那一小時算進去 */
+      if(!s.rt) s.rt={r:0, ms:0, since:null}; else s.rt.since=null;
+      if(!s.cfg.roundMinEarly) s.cfg.roundMinEarly=DEF.roundMinEarly;
+      if(!s.cfg.roundMinLate)  s.cfg.roundMinLate=DEF.roundMinLate;
+      if(!s.cfg.roundLateFrom) s.cfg.roundLateFrom=DEF.roundLateFrom;
       if(!s.cfg.timeBudgetMin) s.cfg.timeBudgetMin=DEF.timeBudgetMin;
       if(!s.demo.holds) s.demo.holds=[];
       if(s.demo.extra===undefined) s.demo.extra=0;
@@ -1017,9 +1045,9 @@ function load(){
 function pushUndo(){ UNDO.push(JSON.stringify(S)); if(UNDO.length>60) UNDO.shift(); }
 function undo(){
   if(!UNDO.length){ toast('沒有可復原的步驟'); return; }
-  const keepTimer=S.timer; /* 牆上時鐘不跟著倒帶 */
+  const keepTimer=S.timer, keepRt=S.rt; /* 牆上時鐘不跟著倒帶 */
   S = JSON.parse(UNDO.pop());
-  S.timer=keepTimer;
+  S.timer=keepTimer; S.rt=keepRt;
   closeOverlay(true); save(); renderAll(); toast('已復原上一步');
 }
 
@@ -1195,9 +1223,9 @@ function syncFixed(rr){
     : {id:'payoff',title:'銀行要求全數還款',when:'pre',
        brief:`銀行抽銀根：每一位名下所有的欠款這個月一次結清。每一格已經算好他實際還得出多少、從哪些帳戶扣，照著收就好；還不出來的部分留著，直接帶進結算。`});
   if(r===c.charityMonth) out.push({id:'charity',title:'公益勸募',
-    brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位。從貢獻帳戶捐的算 ${c.giveBoost} 倍捐款額，用其他的錢捐算 1 比 1。務必記下每個人的捐款額，第 ${c.accidentMonth} 月會用到。`});
+    brief:`自由捐贈，每 ${fm(c.charityUnit)} 為一單位。從貢獻帳戶捐的算 ${c.giveBoost} 倍捐款額，用其他的錢捐算 1 比 1。務必記下每個人的捐款額，第 ${c.accidentMonth} 月會用到——那個月要全額保住 ${fm(c.accidentCost)}，需要捐款額 ${fm(fullCover().credit)}（從貢獻帳戶捐 ${fm(fullCover().give)} 就夠）。`});
   if(r===c.accidentMonth) out.push({id:'accident',title:'重大事故',
-    brief:`向每一位收 ${fm(c.accidentCost)}。捐款額每 ${fm(c.charityUnit)} 就有貴人相助保留 ${fm(c.charityCover)}；從貢獻帳戶捐過 ${fm(c.charityUnit)} 的人就全額保住、不用付。`});
+    brief:`向每一位收 ${fm(c.accidentCost)}。捐款額每 ${fm(c.charityUnit)} 有貴人相助保留 ${fm(c.charityCover)}；要全額保住得累積到捐款額 ${fm(fullCover().credit)}（＝從貢獻帳戶捐 ${fm(fullCover().give)}，或用其他帳戶捐 ${fm(fullCover().other)}）。`});
   if(r===c.reallocA || r===c.reallocB) out.push({id:'realloc',title:'預算重分配窗口',
     brief:`可以重新調整六個帳戶的分配比例，也可以把已經存進帳戶裡的錢搬到別格（總額不變）。${r===c.reallocA?`第一次要先付 ${fm(c.unlockFee)} 學習費，用學習帳戶的錢付只要 ${fm(c.unlockFeeLearn)}`:'這次免費'}。`});
   return out;
@@ -1870,6 +1898,7 @@ function drawEvent(){
   else play('flip');
   save();
   queueOverlay(()=>openOverlay(cardHTML(c,id), true));
+  if(c.kind==='bigspend') queueConv('luxury', Math.abs(c.amt));
   renderAll();
 }
 /* 「付固定支出之前」才觸發的固定事件：通貨膨脹（第 4 月）與結婚生子（第 8 月）。
@@ -1902,13 +1931,19 @@ function nextRound(){
   if(S.phase!=='expense'){ preExpenseFixed(r); demoExpense(); }
   /* ── v4 月底固定事件（依月份） ── */
   if(r===cfg.mindlessMonth){ S.mindlessOn=true; queueOverlay(()=>{ reveal('fx_mindless'); play('expense'); openOverlay(mindlessHTML(), true); }); }
-  if(r===cfg.stressMonth){ demoStress(); queueOverlay(()=>{ reveal('fx_stress'); play('alarm'); openOverlay(stressHTML(), true); }); }
+  if(r===cfg.stressMonth){ demoStress();
+    queueOverlay(()=>{ reveal('fx_stress'); play('alarm'); openOverlay(stressHTML(), true); });
+    queueConv('stress'); }
   /* 通膨（第 4 月）與結婚生子（第 8 月）已改到「付固定支出之前」，見 preExpenseFixed；
      知識變現（第 7 月）已改到「月初」，見下方 onAllClosed。這裡只留真正屬於月底的事。 */
   /* 失業卡在「停薪的前一個月月底、繳完生活費之後」翻出來——先過完安穩的一個月，才被通知沒工作 */
-  if(r===cfg.joblessMonth-1) queueOverlay(()=>{ reveal('fx_jobless'); play('boom'); openOverlay(joblessHTML(), true); });
-  if(r===cfg.charityMonth){ queueOverlay(()=>{ reveal('fx_charity'); play('good'); openOverlay(charityHTML()); }); }
-  if(r===cfg.accidentMonth){ demoAccident(); queueOverlay(()=>{ reveal('fx_accident'); play('boom'); openOverlay(accidentHTML(), true); }); }
+  if(r===cfg.joblessMonth-1){ queueOverlay(()=>{ reveal('fx_jobless'); play('boom'); openOverlay(joblessHTML(), true); });
+    queueConv('jobless'); }
+  if(r===cfg.charityMonth){ queueOverlay(()=>{ reveal('fx_charity'); play('good'); openOverlay(charityHTML()); });
+    queueConv('charity'); }
+  if(r===cfg.accidentMonth){ demoAccident();
+    queueOverlay(()=>{ reveal('fx_accident'); play('boom'); openOverlay(accidentHTML(), true); });
+    queueConv('accident'); }
   demoMonthEnd(); demoSnap();
   if((r===cfg.reallocA||r===cfg.reallocB) && r<cfg.rounds){ queueOverlay(()=>{ reveal('fx_realloc'); openOverlay(reallocHTML(r)); }); }
   onAllClosed = ()=>{
@@ -2221,6 +2256,65 @@ function charityHTML(){
       '也完全可以不捐——這是你的選擇'])}
   ${demoCtl}`, QUOTES.charity);
 }
+/* 重大事故要「全額保住」需要多少——一律從設定現算，文案不准寫死。
+   回傳：捐款額門檻 / 從貢獻帳戶要捐多少 / 用其他帳戶要捐多少 */
+function fullCover(){
+  const c=S.cfg;
+  const credit=Math.ceil(c.accidentCost/c.charityCover)*c.charityUnit;  /* 需要的捐款額 */
+  return { credit, give:Math.ceil(credit/c.giveBoost), other:credit };
+}
+/* 帳戶換算表。五種事件共用同一套：「這個帳戶拿出 X → 換到／抵掉 Y」。
+   數字一律從 S.cfg 現算，改設定文案會自己跟著變。 */
+function convSpec(kind, cost){
+  const c=S.cfg;
+  switch(kind){
+    case 'stress':  return {tag:'固定事件・第 '+c.stressMonth+' 月', title:'你的娛樂帳戶能抵多少？',
+      flavor:'報復性消費 '+fm(c.stressCost)+'。平常捨得讓自己開心的人，這一關最輕鬆。', wash:'#E8C98F',
+      from:'娛樂帳戶拿出', to:'可以抵銷', per:c.funPer, cover:c.funCover, cap:c.stressCost,
+      fullTag:'全額抵銷', foot:'抵不完的差額，依序從<b>生活帳戶</b>與其他帳戶支付。'};
+    case 'luxury':  return {tag:'試煉・慾望考驗', title:'你的娛樂帳戶能抵多少？',
+      flavor:'這一筆 '+fm(cost)+' 的大額消費，娛樂帳戶可以幫你扛掉一部分。', wash:'#C96A5B',
+      from:'娛樂帳戶拿出', to:'可以抵銷', per:c.funPer, cover:c.funCover, cap:cost,
+      fullTag:'全額抵銷', foot:'抵不完的差額，依序從<b>生活帳戶</b>與其他帳戶支付。'};
+    case 'jobless': return {tag:'停薪月', title:'你的儲蓄帳戶能撐多久？',
+      flavor:'沒有薪水的月份，生活費還是要付。儲蓄就是拿來這樣用的。', wash:'#8FA9C0',
+      from:'儲蓄帳戶拿出', to:'可以抵生活費', per:c.joblessSaveUnit, cover:c.joblessSaveCover, cap:curExpense(),
+      fullTag:'整個月的生活費', foot:'系統會<b>自動抵到剛好夠</b>，不會多扣你的儲蓄。'};
+    case 'charity': return {tag:'固定事件・第 '+c.charityMonth+' 月', title:'貢獻帳戶捐，能記多少捐款額？',
+      flavor:'用貢獻帳戶的錢捐，記 '+c.giveBoost+' 倍；用別的帳戶的錢捐，只記 1 比 1。', wash:'#93AC87',
+      from:'貢獻帳戶捐出', to:'記成捐款額', per:c.charityUnit, cover:c.charityUnit*c.giveBoost,
+      cap:fullCover().credit, fullTag:'第 '+c.accidentMonth+' 月全保',
+      foot:'捐款額第 '+c.accidentMonth+' 月會用到——<b>累積到 '+fm(fullCover().credit)+'</b>，那一關就全額保住。'};
+    case 'accident':return {tag:'固定事件・第 '+c.accidentMonth+' 月', title:'你的捐款額能保住多少？',
+      flavor:'一場 '+fm(c.accidentCost)+' 的重大事故。平時種下的善意，這一刻回來接住你。', wash:'#C96A5B',
+      from:'累積的捐款額', to:'貴人相助保住', per:c.charityUnit, cover:c.charityCover, cap:c.accidentCost,
+      fullTag:'全額保住', foot:'保不住的部分要<b>全額支付</b>，依序扣各帳戶；不夠就只能跟銀行借。'};
+  }
+}
+function convHTML(kind, cost){
+  const sp=convSpec(kind, cost); if(!sp) return '';
+  const need=Math.ceil(sp.cap/sp.cover);          /* 要幾個單位才「蓋滿」 */
+  /* 固定最多 4 行，而且一定包含「1 個單位」與「蓋滿」這兩個端點。
+     ⚠ 行數不是越多越好：卡片一變高，fitPanel 會被高度卡住，投影幕上整張反而縮小
+       （實測 6 行 1350px、3 行 1830px，差快五成）。中間補兩個等距的點就夠講了。 */
+  let marks=[1];
+  if(need>4){ marks.push(Math.round(need/3), Math.round(need*2/3)); }
+  else { for(let n=2;n<need;n++) marks.push(n); }
+  marks.push(need);
+  marks=[...new Set(marks)].filter(n=>n>=1&&n<=need).sort((a,b)=>a-b);
+  const rows=marks.map(n=>{
+    const got=Math.min(sp.cap, n*sp.cover), full=got>=sp.cap;
+    return `<tr class="${full?'full':''}"><td>${fm(n*sp.per)}</td>
+      <td class="ar">→</td><td>${fm(got)}${full?`<span class="ft">${sp.fullTag}</span>`:''}</td></tr>`;
+  });
+  const c=fixShell(sp.tag, sp.title, sp.flavor, sp.wash);
+  return cardShell(c,
+    `<table class="convt"><tr><th>${sp.from}</th><th></th><th>${sp.to}</th></tr>${rows.join('')}</table>
+     <div class="convfoot">${sp.foot}</div>`,
+    '看得懂換算，才知道平常存的那一格值多少。');
+}
+/* 事件卡講完 → 按下一步 → 這一頁。queueOverlay 本來就是佇列，接著排就好。 */
+function queueConv(kind, cost){ queueOverlay(()=>openOverlay(convHTML(kind,cost), true)); }
 function accidentHTML(){
   const cfg=S.cfg;
   const c=fixShell('固定事件・第 '+cfg.accidentMonth+' 月','重大事故',
@@ -2229,7 +2323,8 @@ function accidentHTML(){
   return cardShell(c, branches(
     '曾在公益事件捐贈',[
       `捐款額每 <b class="hl">${fm(cfg.charityUnit)}</b> ＝ 貴人相助<b class="hl">保留 ${fm(cfg.charityCover)}</b> 支出`,
-      `捐得夠多的人 → <b class="hl">${fm(cfg.accidentCost)} 全額保住</b>，一毛都不用付`],
+      `要<b class="hl">全額保住 ${fm(cfg.accidentCost)}</b>，捐款額要累積到 <b class="hl">${fm(fullCover().credit)}</b>`,
+      `＝從貢獻帳戶捐 <b class="hl">${fm(fullCover().give)}</b>，或用其他帳戶的錢捐 <b class="hl">${fm(fullCover().other)}</b>`],
     '一毛都沒捐',[
       '無人伸出援手',
       `<b class="hl">全額支付 ${fm(cfg.accidentCost)}</b>，依序扣光各帳戶`,
@@ -2733,52 +2828,95 @@ function fmtClock(ms){
   const m=Math.floor(s/60), ss=s%60;
   return `${m}:${String(ss).padStart(2,'0')}`;
 }
-/* 依時間預算換算的建議進度 */
+/* ── 每一局自己的鐘（2026-09-19）────────────────────────────────
+   規則：前 roundLateFrom-1 局各 roundMinEarly 分、之後各 roundMinLate 分。
+   ⚠ 只有「學員在動作」的時間才算。判準＝投影幕上沒有卡片：
+     有卡片＝講師在講事件／規則，那段不計時（培峯：每個事件講完後下一步才開始計時）。
+   整場計時按暫停時，這個也跟著停。換月自動歸零重算。
+   刻意不 save()：這個鐘是講師端自己看的，不需要存檔也不需要廣播，
+   每秒寫 localStorage＋syncPush 反而是浪費。 */
+function roundBudgetMs(r){
+  const c=S.cfg;
+  return ((r>=(c.roundLateFrom||8)) ? (c.roundMinLate||8) : (c.roundMinEarly||5))*60000;
+}
+function budgetUpTo(r){ let ms=0; for(let i=1;i<=r;i++) ms+=roundBudgetMs(i); return ms; }
+function totalBudgetMs(){ return budgetUpTo(S.cfg.rounds); }
+function rtSync(){
+  if(!S.rt) S.rt={r:0, ms:0, since:null};
+  const t=S.rt, now=Date.now(), r=Math.min(S.round, S.cfg.rounds);
+  if(t.r!==r){ t.r=r; t.ms=0; t.since=null; }        /* 換月＝這一局的鐘重新算 */
+  const run = S.started && S.round<=S.cfg.rounds && !overlayOpen
+              && !!(S.timer && S.timer.runningSince);
+  if(run && !t.since) t.since=now;
+  else if(!run && t.since){ t.ms += now-t.since; t.since=null; }
+}
+function rtElapsed(){ const t=S.rt||{}; return (t.ms||0) + (t.since?Date.now()-t.since:0); }
+/* 依時間預算換算的建議進度。預算＝把每一局的時間盒加起來，不再是平均攤 */
 function paceInfo(){
-  const budget=(S.cfg.timeBudgetMin||90)*60000;
-  const el=elapsedMs();
-  const sugg=Math.max(1,Math.min(S.cfg.rounds,Math.ceil(el/budget*S.cfg.rounds)));
+  const el=elapsedMs(), total=totalBudgetMs();
+  let sugg=1;
+  for(let r=1;r<=S.cfg.rounds;r++) if(el>=budgetUpTo(r)) sugg=r+1;
+  sugg=Math.max(1,Math.min(S.cfg.rounds,sugg));
   const cur=Math.min(S.round,S.cfg.rounds);
-  return {sugg, diff:sugg-cur, over:el-budget};
+  return {sugg, diff:sugg-cur, over:el-total};
 }
 function renderTimer(){
   const chip=$('#timerChip'); if(!chip) return;
   if(!S.started){ chip.classList.remove('show'); return; }
   chip.classList.add('show');
   const t=S.timer||{};
-  $('#timerTxt').textContent=fmtClock(elapsedMs());
   const p=paceInfo();
   chip.classList.remove('warn','bad','paused');
-  if(!t.runningSince){ chip.classList.add('paused'); $('#timerSub').textContent='暫停中'; return; }
+  /* 跑完 12 局＝只剩總結，顯示整場時間就好 */
   if(S.round>S.cfg.rounds){
+    $('#timerTxt').textContent=fmtClock(elapsedMs());
     $('#timerSub').textContent = p.over>0 ? `超時 ${fmtClock(p.over)}` : '結算中';
     if(p.over>0) chip.classList.add('warn');
     return;
   }
-  if(p.diff>=3){ chip.classList.add('bad'); $('#timerSub').textContent=`落後 ${p.diff} 月`; }
-  else if(p.diff>=1){ chip.classList.add('warn'); $('#timerSub').textContent=`建議第 ${p.sugg} 月`; }
-  else { $('#timerSub').textContent='進度正常'; }
+  const r=Math.min(S.round,S.cfg.rounds), bud=roundBudgetMs(r), used=rtElapsed();
+  const left=bud-used;
+  /* 主要數字＝這一局還剩多少；整場總時間退到副標 */
+  $('#timerTxt').textContent = (left<0?'-':'')+fmtClock(Math.abs(left));
+  const total=`總計 ${fmtClock(elapsedMs())}`;
+  if(!t.runningSince){ chip.classList.add('paused');
+    $('#timerSub').textContent=`第 ${r} 局・暫停中・${total}`; return; }
+  if(overlayOpen){ chip.classList.add('paused');
+    $('#timerSub').textContent=`第 ${r} 局・講解中不計時・${total}`; return; }
+  if(left<0){ chip.classList.add('bad'); $('#timerSub').textContent=`第 ${r} 局超時・${total}`; return; }
+  if(left<=60000){ chip.classList.add('warn'); $('#timerSub').textContent=`第 ${r} 局・剩不到 1 分・${total}`; return; }
+  $('#timerSub').textContent=`第 ${r} 局／${Math.round(bud/60000)} 分・${total}`;
 }
-setInterval(()=>{ try{ renderTimer(); updateTimerPanel(); }catch(e){} },1000);
+setInterval(()=>{ try{ rtSync(); renderTimer(); updateTimerPanel(); }catch(e){} },1000);
 function toggleTimerRun(){
   const t=S.timer;
   if(t.runningSince){ t.accumMs+=Date.now()-t.runningSince; t.runningSince=null; toast('計時已暫停（中場休息）'); }
   else { t.runningSince=Date.now(); toast('計時繼續'); }
   save(); renderTimer(); updateTimerPanel(true);
 }
-function adjBudget(d){
-  S.cfg.timeBudgetMin=Math.max(10,(S.cfg.timeBudgetMin||90)+d);
+function adjRoundMin(which,d){
+  const k = which==='late' ? 'roundMinLate' : 'roundMinEarly';
+  S.cfg[k]=Math.max(1,(S.cfg[k]||(which==='late'?8:5))+d);
   save(); renderTimer(); updateTimerPanel(true);
 }
 function updateTimerPanel(force){
   const el=$('#tpElapsed'); if(!el) return;
   const p=paceInfo();
-  const budget=(S.cfg.timeBudgetMin||90)*60000;
+  const budget=totalBudgetMs();
   el.textContent=fmtClock(elapsedMs());
   $('#tpRemain').textContent = p.over>0 ? `超時 ${fmtClock(p.over)}` : fmtClock(budget-elapsedMs());
   $('#tpRemain').style.color = p.over>0 ? 'var(--brick)' : 'var(--green-900)';
+  const rb=$('#tpRound');
+  if(rb){
+    if(S.round>S.cfg.rounds) rb.textContent='—';
+    else{ const r=Math.min(S.round,S.cfg.rounds), left=roundBudgetMs(r)-rtElapsed();
+      rb.textContent=(left<0?'超時 ':'')+fmtClock(Math.abs(left));
+      rb.style.color = left<0?'var(--brick)':'var(--green-900)'; }
+  }
   if(force){
-    $('#tpBudget').textContent=(S.cfg.timeBudgetMin||90)+' 分鐘';
+    $('#tpBudget').textContent=Math.round(budget/60000)+' 分鐘';
+    $('#tpEarly').textContent=(S.cfg.roundMinEarly||5)+' 分';
+    $('#tpLate').textContent=(S.cfg.roundMinLate||8)+' 分';
     $('#tpRun').textContent=S.timer.runningSince?'⏸ 暫停計時':'▶ 繼續計時';
   }
   $('#tpPace').innerHTML = S.round>S.cfg.rounds
@@ -2790,16 +2928,21 @@ function updateTimerPanel(force){
 function openTimerPanel(){
   queueOverlay(()=>{ openOverlay(`<div class="lite" style="width:min(620px,94vw)">
     <h2>⏱ 課堂計時</h2>
-    <p class="lsub">時間從按下「進入模擬」開始累計，含講解與總結；中場休息可暫停。</p>
+    <p class="lsub">每一局有自己的時間盒。<b>投影幕上有卡片的時候不計時</b>——你在講事件、講規則那段不算在學員的時間裡，
+      按掉卡片、學員開始動作，這一局的鐘才走。</p>
     <div class="finGrid">
-      <div class="fin"><div class="lb">已經過</div><div class="dv num" id="tpElapsed">0:00</div></div>
-      <div class="fin"><div class="lb">剩餘（預算 <span id="tpBudget">${S.cfg.timeBudgetMin} 分鐘</span>）</div><div class="dv num" id="tpRemain">--</div></div>
+      <div class="fin"><div class="lb">這一局還剩</div><div class="dv num" id="tpRound">--</div></div>
+      <div class="fin"><div class="lb">已經過（整場）</div><div class="dv num" id="tpElapsed">0:00</div></div>
+      <div class="fin"><div class="lb">剩餘（共 <span id="tpBudget">--</span>）</div><div class="dv num" id="tpRemain">--</div></div>
     </div>
     <p style="text-align:center;font-size:16px;margin:6px 0 2px" id="tpPace"></p>
-    <p style="text-align:center;font-size:12.5px;color:var(--ink-mute)">配速＝把預算平均鋪在 ${S.cfg.rounds} 個月上；想預留總結時間，可把預算調小 10–20 分。</p>
+    <p style="text-align:center;font-size:12.5px;color:var(--ink-mute)">
+      第 1–${(S.cfg.roundLateFrom||8)-1} 局每局 <b id="tpEarly">--</b>、第 ${S.cfg.roundLateFrom||8}–${S.cfg.rounds} 局每局 <b id="tpLate">--</b>。</p>
     <div class="formfoot">
-      <button class="ctl" onclick="adjBudget(-10)">−10 分</button>
-      <button class="ctl" onclick="adjBudget(10)">＋10 分</button>
+      <button class="ctl" onclick="adjRoundMin('early',-1)">前段 −1 分</button>
+      <button class="ctl" onclick="adjRoundMin('early',1)">前段 ＋1 分</button>
+      <button class="ctl" onclick="adjRoundMin('late',-1)">後段 −1 分</button>
+      <button class="ctl" onclick="adjRoundMin('late',1)">後段 ＋1 分</button>
       <button class="ctl" id="tpRun" onclick="toggleTimerRun()">⏸ 暫停計時</button>
       <button class="ctl primary" onclick="closeOverlay()">關閉</button>
     </div>
@@ -2815,7 +2958,7 @@ const SETTINGS=[
   ['funPer','娛樂抵扣單位'],['funCover','娛樂每單位抵銷額'],
   ['unlockFee','重分配首次學習費'],['unlockFeeLearn','重分配・學習帳戶價'],['knowUnit','知識變現單位'],
   ['loanUnit','借款單位'],['loanRatePct','借款月息 %'],['loanCapX','借款上限(月現金流倍數)'],
-  ['timeBudgetMin','課堂時間預算(分)']
+  ['roundMinEarly','前段每局分鐘'],['roundMinLate','後段每局分鐘'],['roundLateFrom','後段從第幾局起']
 ];
 function openSettings(){
   const cfg=S.cfg;
@@ -3170,7 +3313,7 @@ function renderSide(){
         ? '🏦 <b>本月月初</b>：轉盤抽中了！名下欠款一次結清，有多少還多少，還不出來的直接進結算！'
         : '🏦 <b>本月月初</b>：轉盤停在「平安」，這個月沒有抽銀根——欠款與利息原封不動進結算。',
     [cfg.charityMonth]:`💝 <b>本月月底</b>：公益勸募——每 1,000 為單位自由捐贈；從貢獻帳戶捐算 ${cfg.giveBoost} 倍捐款額`,
-    [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——捐款額每 1,000 保留 ${fm(cfg.charityCover)} 支出！`,
+    [cfg.accidentMonth]:`⚠ <b>本月月底</b>：重大事故 ${fm(cfg.accidentCost)}——捐款額每 ${fm(cfg.charityUnit)} 保留 ${fm(cfg.charityCover)}，全額保住要 ${fm(fullCover().credit)} 捐款額！`,
     [cfg.joblessMonth-1]:`💼 <b>本月月底</b>：失業／公司倒閉——第 ${cfg.joblessMonth}、${cfg.joblessMonth+cfg.joblessLen-1} 月停薪（儲蓄每付 ${fm(cfg.joblessSaveUnit)} 抵 ${fm(cfg.joblessSaveCover)} 生活費）`,
     [cfg.inflationMonth]:`💸 <b>繳費前</b>：通貨膨脹——固定支出永久 +${fm(cfg.inflationExtra)}，<b>本月就照新金額繳</b>；月底開放預算重分配（${reallocFee}）`,
     [cfg.marryMonth]:`💍 <b>繳費前</b>：結婚生子——固定支出永久 +${fm(cfg.marryExtra)}，<b>本月就照新金額繳</b>；月底開放預算重分配（${reallocFee}）`
