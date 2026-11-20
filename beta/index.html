@@ -1325,8 +1325,13 @@ function syncOnMsg(m){
     SYNC.hello[k]=now; syncPush(true); return;
   }
   if(m.t==='status'){
-    SYNC.tables[m.table]={ table:m.table, name:m.name||`第 ${m.table} 桌`,
-      students:m.students||0, done:!!m.done, round:m.round||0, ts:Date.now() };
+    /* 頻道沒有發訊者驗證，回報內容會拼進 #syncPanel 的 innerHTML：
+       桌號只收 1～SYNC_TABLES 的整數，人數與月份轉成數字，名稱不收（畫面也沒用到） */
+    const tb=Number(m.table);
+    if(!Number.isInteger(tb) || tb<1 || tb>SYNC_TABLES) return;
+    const num=(v,max)=>{ const n=Math.round(Number(v)); return Number.isFinite(n)?Math.min(Math.max(n,0),max):0; };
+    SYNC.tables[tb]={ table:tb, name:`第 ${tb} 桌`,
+      students:num(m.students,99), done:m.done===true, round:num(m.round,99), ts:Date.now() };
     renderSync();
   }
 }
