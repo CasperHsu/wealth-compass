@@ -662,7 +662,10 @@ function saveCS(){ try{ localStorage.setItem(CKEY, JSON.stringify(CS)); }catch(e
 function loadCS(){
   /* v1 的舊帳本沒有帳戶資料，算不出正確數字，一律作廢重來（順便解掉「打開就是上一場」） */
   try{ const raw=localStorage.getItem(CKEY); if(!raw) return null;
-       const o=JSON.parse(raw); return (o&&o.v===5)?o:null; }catch(e){ return null; }
+       const o=JSON.parse(raw); if(!(o&&o.v===5)) return null;
+       /* 舊版存下來的帳本可能已經混進未過濾的廣播內容，讀回來時一併過濾 */
+       if(o.mlog) o.mlog=cleanIn(o.mlog); if(o.back) o.back=cleanIn(o.back);
+       return o; }catch(e){ return null; }
 }
 function nameOf(i){ return (CS.names[i]||'').trim() || '你'; }
 
@@ -785,7 +788,30 @@ function connect(){
 /* table:0＝學員台。講師的「各桌進度」面板只列第 1～5 桌（志工），
    所以學員連進來不會佔位；主控端收到 hello 會補一份完整狀態給我們。 */
 function hello(){ if(TX) TX.send({t:'hello', table:0}); }
+/* 頻道沒有發訊者驗證：知道房號的人都能送訊息進來，而收到的內容會拼進 innerHTML、
+   onclick 字串，還會存進 localStorage 帳本。所以進來的資料一律先過濾：
+   字串拿掉 < > " ' ` & \ 這幾個能跳出 HTML／屬性／JS 字串的字元，數字只收有限值，
+   陣列與物件限制層數與數量。正常的講師廣播不會用到這些字元。 */
+const BAD_CH=/[<>"'`&\\]/g;
+function cleanIn(v,d){
+  d=d||0; if(d>10) return null;
+  if(typeof v==='string') return v.replace(BAD_CH,'').slice(0,2000);
+  if(typeof v==='number') return Number.isFinite(v)?v:0;
+  if(typeof v==='boolean' || v===null) return v;
+  if(Array.isArray(v)) return v.slice(0,500).map(x=>cleanIn(x,d+1));
+  if(typeof v==='object'){
+    const o={}; let n=0;
+    for(const k of Object.keys(v)){
+      if(++n>500) break;
+      if(k==='__proto__'||k==='constructor'||k==='prototype') continue;
+      o[k.replace(BAD_CH,'')]=cleanIn(v[k],d+1);
+    }
+    return o;
+  }
+  return null;
+}
 function onMsg(m){
+  m=cleanIn(m);
   if(!m || m.t!=='state') return;
   /* 兩條線路會各送一份同樣的封包，處理一次就好；
      講師重整頁面後 seq 會歸零，所以要連 sid 一起看，否則新封包會被誤判成舊的。 */

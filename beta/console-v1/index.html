@@ -412,7 +412,30 @@ function connect(){
   checkLink();
 }
 function hello(){ if(TX) TX.send({t:'hello', table:CS.table}); }
+/* 頻道沒有發訊者驗證：知道房號的人都能送訊息進來，而收到的內容會拼進 innerHTML、
+   onclick 字串，還會存進 localStorage 帳本。所以進來的資料一律先過濾：
+   字串拿掉 < > " ' ` & \ 這幾個能跳出 HTML／屬性／JS 字串的字元，數字只收有限值，
+   陣列與物件限制層數與數量。正常的講師廣播不會用到這些字元。 */
+const BAD_CH=/[<>"'`&\\]/g;
+function cleanIn(v,d){
+  d=d||0; if(d>10) return null;
+  if(typeof v==='string') return v.replace(BAD_CH,'').slice(0,2000);
+  if(typeof v==='number') return Number.isFinite(v)?v:0;
+  if(typeof v==='boolean' || v===null) return v;
+  if(Array.isArray(v)) return v.slice(0,500).map(x=>cleanIn(x,d+1));
+  if(typeof v==='object'){
+    const o={}; let n=0;
+    for(const k of Object.keys(v)){
+      if(++n>500) break;
+      if(k==='__proto__'||k==='constructor'||k==='prototype') continue;
+      o[k.replace(BAD_CH,'')]=cleanIn(v[k],d+1);
+    }
+    return o;
+  }
+  return null;
+}
 function onMsg(m){
+  m=cleanIn(m);
   if(!m || m.t!=='state') return;
   /* 兩條線路會各送一份同樣的封包，處理一次就好；
      講師重整頁面後 seq 會歸零，所以要連 sid 一起看，否則新封包會被誤判成舊的。 */
